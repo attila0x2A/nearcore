@@ -434,6 +434,7 @@ impl PartialEncodedStateWitnessTracker {
             values.extend(accessed_contracts.into_iter().map(|code| code.0.into()));
 
             tracing::debug!(target: "client", ?key, "Sending encoded witness to client.");
+            // FIXME(spice) - with spice send witness to the spice agent here.
             self.client_sender.send(ChunkStateWitnessMessage { witness, raw_witness_size });
 
             total_size

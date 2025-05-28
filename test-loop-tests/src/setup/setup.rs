@@ -16,6 +16,7 @@ use near_chunks::shards_manager_actor::ShardsManagerActor;
 use near_client::chunk_executor_actor::ChunkExecutorActor;
 use near_client::client_actor::ClientActorInner;
 use near_client::gc_actor::GCActor;
+use near_client::spice_core::CoreStatementsProcessor;
 use near_client::sync_jobs_actor::SyncJobsActor;
 use near_client::{
     Client, PartialWitnessActor, TxRequestHandler, TxRequestHandlerConfig, ViewClientActorInner,
@@ -124,6 +125,7 @@ pub fn setup_client(
     // Make sure this is the same as the account_id of the client to redirect the network messages properly.
     let peer_id = PeerId::new(create_test_signer(account_id.as_str()).public_key());
 
+    let core_statement_processor = CoreStatementsProcessor::new();
     let client = Client::new(
         test_loop.clock(),
         client_config.clone(),
@@ -144,6 +146,8 @@ pub fn setup_client(
         client_adapter.as_multi_sender(),
         client_adapter.as_multi_sender(),
         upgrade_schedule.clone(),
+        // FIXME(spice): consider if it makes sense to instead of using directly send messages to spice agent.
+        core_statement_processor.clone(),
     )
     .unwrap();
 
@@ -211,7 +215,7 @@ pub fn setup_client(
         Default::default(),
         None,
         sync_jobs_adapter.as_multi_sender(),
-        chunk_executor_adapter.as_sender(),
+        chunk_executor_adapter.as_multi_sender(),
     )
     .unwrap();
 
@@ -276,6 +280,9 @@ pub fn setup_client(
         shard_tracker.clone(),
         network_adapter.as_multi_sender(),
         NonZeroUsize::new(1000).unwrap(),
+        partial_witness_adapter.as_multi_sender(),
+        core_statement_processor,
+        chunk_executor_adapter.as_multi_sender(),
     );
 
     let chunk_executor_sender = test_loop.data.register_actor(

@@ -25,7 +25,7 @@ fn test_spice_chain() {
     let builder = TestLoopBuilder::new();
 
     let accounts: Vec<AccountId> =
-        (0..10).map(|i| format!("account{}", i).parse().unwrap()).collect_vec();
+        (0..100).map(|i| format!("account{}", i).parse().unwrap()).collect_vec();
 
     let num_block_producers = 4;
     let num_validators = 5;
@@ -39,7 +39,7 @@ fn test_spice_chain() {
         block_and_chunk_producers.iter().cloned().chain(validators_only.clone()).collect_vec();
 
     let epoch_length = 10;
-    let shard_layout = ShardLayout::simple_v1(&["account3", "account5", "account7"]);
+    let shard_layout = ShardLayout::simple_v1(&["account5"]);
     let validators_spec = ValidatorsSpec::desired_roles(
         &block_and_chunk_producers.iter().map(|a| a.as_str()).collect_vec(),
         &validators_only.iter().map(|a| a.as_str()).collect_vec(),
@@ -168,7 +168,7 @@ fn schedule_send_money_txs(
         let sent_txs = sent_txs.clone();
         test_loop.send_adhoc_event_with_delay(
             format!("transaction {}", i),
-            Duration::milliseconds(300 * i as i64),
+            Duration::milliseconds(100 * i as i64),
             move |data| {
                 let clients = node_data
                     .iter()

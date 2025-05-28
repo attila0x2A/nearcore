@@ -201,17 +201,19 @@ fn validate_chunk_relevant(
     // that doesn't exceed the height of the current final block to be
     // included in the chain. This addresses both network-delayed messages
     // as well as malicious behavior of a chunk producer.
-    if let Some(final_head) = final_head {
-        if height_created <= final_head.height {
-            tracing::debug!(
-                target: "stateless_validation",
-                ?chunk_production_key,
-                final_head_height = final_head.height,
-                "Skipping because height created is not greater than final head height",
-            );
-            return Ok(false);
-        }
-    }
+
+    // FIXME(spice): Use certified head instead or similar.
+    // if let Some(final_head) = final_head {
+    //     if height_created <= final_head.height {
+    //         tracing::debug!(
+    //             target: "stateless_validation",
+    //             ?chunk_production_key,
+    //             final_head_height = final_head.height,
+    //             "Skipping because height created is not greater than final head height",
+    //         );
+    //         return Ok(false);
+    //     }
+    // }
     if let Some(head) = head {
         if height_created > head.height + MAX_HEIGHTS_AHEAD {
             tracing::debug!(

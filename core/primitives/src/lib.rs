@@ -35,6 +35,7 @@ pub mod sandbox;
 pub mod shard_layout;
 pub mod sharding;
 pub mod signable_message;
+pub mod spice;
 pub mod state;
 pub mod state_part;
 pub mod state_record;

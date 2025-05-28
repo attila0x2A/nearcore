@@ -8,6 +8,7 @@ use crate::chunk_producer::ChunkProducer;
 use crate::client_actor::ClientSenderForClient;
 use crate::debug::BlockProductionTracker;
 use crate::metrics;
+use crate::spice_core::CoreStatementsProcessor;
 use crate::stateless_validation::chunk_endorsement::ChunkEndorsementTracker;
 use crate::stateless_validation::chunk_validator::ChunkValidator;
 use crate::stateless_validation::partial_witness::partial_witness_actor::PartialWitnessSenderForClient;
@@ -174,6 +175,8 @@ pub struct Client {
     upgrade_schedule: ProtocolUpgradeVotingSchedule,
     /// Produced optimistic block.
     last_optimistic_block_produced: Option<OptimisticBlock>,
+
+    pub(crate) core_statements_processor: CoreStatementsProcessor,
 }
 
 impl AsRef<Client> for Client {
@@ -222,6 +225,7 @@ impl Client {
         chain_sender_for_state_sync: ChainSenderForStateSync,
         myself_sender: ClientSenderForClient,
         upgrade_schedule: ProtocolUpgradeVotingSchedule,
+        core_statements_processor: CoreStatementsProcessor,
     ) -> Result<Self, Error> {
         let doomslug_threshold_mode = if enable_doomslug {
             DoomslugThresholdMode::TwoThirds
@@ -364,6 +368,7 @@ impl Client {
             chunk_distribution_network,
             upgrade_schedule,
             last_optimistic_block_produced: None,
+            core_statements_processor,
         })
     }
 

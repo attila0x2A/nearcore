@@ -5,8 +5,13 @@ use std::sync::Arc;
 
 use itertools::Itertools as _;
 use lru::LruCache;
+use near_async::MultiSend;
+use near_async::MultiSenderFrom;
 use near_async::messaging::CanSend;
 use near_async::messaging::Handler;
+use near_async::messaging::IntoSender as _;
+use near_async::messaging::Sender;
+use near_chain::chain::ChunkStateWitnessMessage;
 use near_chain::chain::{
     ApplyChunksMode, NewChunkData, NewChunkResult, OldChunkData, OldChunkResult, ShardContext,
     StorageContext, UpdateShardJob, do_apply_chunks, get_should_apply_chunk,
@@ -26,13 +31,41 @@ use near_epoch_manager::shard_tracker::ShardTracker;
 use near_network::types::{NetworkRequests, PeerManagerAdapter, PeerManagerMessageRequest};
 use near_primitives::block::Chunks;
 use near_primitives::hash::CryptoHash;
+use near_primitives::hash::hash;
+use near_primitives::merkle::merklize;
 use near_primitives::optimistic_block::{BlockToApply, CachedShardUpdateKey};
+use near_primitives::receipt::Receipt;
 use near_primitives::sandbox::state_patch::SandboxStatePatch;
+use near_primitives::shard_layout::ShardLayout;
+use near_primitives::sharding::ChunkHash;
 use near_primitives::sharding::ReceiptProof;
+use near_primitives::spice::ExecutionResult;
+use near_primitives::stateless_validation::contract_distribution::ContractUpdates;
+use near_primitives::stateless_validation::state_witness::ChunkStateTransition;
+use near_primitives::stateless_validation::state_witness::ChunkStateWitness;
+use near_primitives::stateless_validation::state_witness::ChunkStateWitnessAck;
+use near_primitives::stateless_validation::state_witness::ChunkStateWitnessSize;
+use near_primitives::stateless_validation::stored_chunk_state_transition_data::StoredChunkStateTransitionData;
+use near_primitives::stateless_validation::stored_chunk_state_transition_data::StoredChunkStateTransitionDataV1;
 use near_primitives::types::chunk_extra::ChunkExtra;
 use near_primitives::types::{AccountId, EpochId, ShardId, ShardIndex};
+use near_primitives::validator_signer::ValidatorSigner;
 use near_store::Store;
+use near_store::adapter::StoreAdapter as _;
 use tracing::instrument;
+
+use crate::DistributeStateWitnessRequest;
+use crate::PartialWitnessSenderForClient;
+use crate::spice_core::CoreStatementsProcessor;
+use crate::stateless_validation::chunk_validator::orphan_witness_pool::OrphanStateWitnessPool;
+
+#[derive(Clone, MultiSend, MultiSenderFrom)]
+pub struct ChunkExecutorAdapter {
+    pub block_sender: Sender<ExecutorBlock>,
+    pub receipts_sender: Sender<ExecutorIncomingReceipt>,
+    pub execution_result_available_sender: Sender<ExecutorAllExecutionResultsAvailable>,
+    pub witness_sender: Sender<ChunkStateWitnessMessage>,
+}
 
 pub struct ChunkExecutorActor {
     chain_store: ChainStore,
@@ -47,6 +80,13 @@ pub struct ChunkExecutorActor {
 
     /// Receipts originating from block keyed by block hash.
     block_receipts_cache: LruCache<CryptoHash, Vec<ReceiptProof>>,
+
+    core_processor: CoreStatementsProcessor,
+
+    partial_witness_adapter: PartialWitnessSenderForClient,
+
+    orphan_witness_pool: OrphanStateWitnessPool,
+    myself_sender: ChunkExecutorAdapter,
 }
 
 impl ChunkExecutorActor {
@@ -59,16 +99,35 @@ impl ChunkExecutorActor {
         shard_tracker: ShardTracker,
         network_adapter: PeerManagerAdapter,
         block_receipts_cache_capacity: NonZeroUsize,
+        partial_witness_adapter: PartialWitnessSenderForClient,
+        core_processor: CoreStatementsProcessor,
+        myself_sender: ChunkExecutorAdapter,
     ) -> Self {
+        let orphan_witness_pool_size = 1000;
         Self {
+            // FIXME(spice): get size from outside.
+            orphan_witness_pool: OrphanStateWitnessPool::new(orphan_witness_pool_size),
             chain_store: ChainStore::new(store, true, genesis.transaction_validity_period),
             runtime_adapter,
             epoch_manager,
             validator_signer,
             shard_tracker,
             network_adapter,
+            partial_witness_adapter,
+            core_processor,
             block_receipts_cache: LruCache::new(block_receipts_cache_capacity),
+            myself_sender,
         }
+    }
+
+    fn calculate_receipts_root(
+        &self,
+        shard_layout: &ShardLayout,
+        receipts: &[Receipt],
+    ) -> Result<CryptoHash, Error> {
+        let receipts_hashes = Chain::build_receipts_hashes(&receipts, &shard_layout)?;
+        let (receipts_root, _) = merklize(&receipts_hashes);
+        Ok(receipts_root)
     }
 }
 
@@ -89,6 +148,13 @@ pub struct ExecutorIncomingReceipt {
 #[derive(actix::Message, Debug)]
 #[rtype(result = "()")]
 pub struct ExecutorBlock {
+    pub block_hash: CryptoHash,
+}
+
+// FIXME(spice): not sure if this is the best approach.
+#[derive(actix::Message, Debug)]
+#[rtype(result = "()")]
+pub struct ExecutorAllExecutionResultsAvailable {
     pub block_hash: CryptoHash,
 }
 
@@ -136,6 +202,14 @@ impl Handler<ExecutorBlock> for ChunkExecutorActor {
                 return;
             }
         };
+
+        // FIXME(spice): Not sure if this is the best place for this.
+        if let Some(signer) = self.validator_signer.get() {
+            if let Err(err) = self.process_ready_orphan_state_witnesses(&block, signer) {
+                tracing::error!(target: "chunk_executor", %block_hash, ?err, "failed to process orphan state witnesses");
+            }
+        }
+
         let header = block.header();
         let prev_block_hash = header.prev_hash();
         if let Err(err) = self.try_save_incoming_receipts(me.as_ref(), &prev_block_hash) {
@@ -144,6 +218,43 @@ impl Handler<ExecutorBlock> for ChunkExecutorActor {
         }
 
         if let Err(err) = self.try_apply_chunks(&block_hash, me.as_ref()) {
+            tracing::error!(target: "chunk_executor", ?err, ?block_hash, "failed to apply chunk for block hash");
+        };
+    }
+}
+
+impl Handler<ExecutorAllExecutionResultsAvailable> for ChunkExecutorActor {
+    fn handle(
+        &mut self,
+        ExecutorAllExecutionResultsAvailable { block_hash }: ExecutorAllExecutionResultsAvailable,
+    ) {
+        // FIXME(spice): dedup with incoming receipts handling.
+        let me = self.validator_signer.get().map(|signer| signer.validator_id().clone());
+
+        let next_block_hash = self.chain_store.get_next_block_hash(&block_hash);
+        let next_block_hash = match next_block_hash {
+            Ok(hash) => hash,
+            Err(err) => {
+                if matches!(err, Error::DBNotFoundErr(_)) {
+                    // Next block wasn't processed yet.
+                    tracing::debug!(target: "chunk_executor", %block_hash, ?err, "no next block hash is available");
+                    return;
+                }
+                tracing::error!(target: "chunk_executor", %block_hash, ?err, "failed to get next block hash");
+                return;
+            }
+        };
+
+        // FIXME(spice): Not sure if this is the best place for this.
+        {
+            let block = self.chain_store.get_block(&next_block_hash).unwrap();
+            if let Some(signer) = self.validator_signer.get() {
+                if let Err(err) = self.process_ready_orphan_state_witnesses(&block, signer) {
+                    tracing::error!(target: "chunk_executor", %block_hash, ?err, "failed to process orphan state witnesses");
+                }
+            }
+        }
+        if let Err(err) = self.try_apply_chunks(&next_block_hash, me.as_ref()) {
             tracing::error!(target: "chunk_executor", ?err, ?block_hash, "failed to apply chunk for block hash");
         };
     }
@@ -171,7 +282,16 @@ impl ChunkExecutorActor {
                 return Ok(());
             }
         }
-        self.apply_chunks(me, block, SandboxStatePatch {})
+
+        if !self
+            .core_processor
+            .do_all_execution_results_exist(prev_block_hash, &self.chain_store)?
+        {
+            tracing::debug!(target: "chunk_executor", %block_hash, %prev_block_hash, "missing previous block's execution results");
+            return Ok(());
+        }
+
+        self.apply_chunks(me, block, SandboxStatePatch::default())
     }
 
     fn get_incoming_receipts(
@@ -265,6 +385,18 @@ impl ChunkExecutorActor {
             x
         }).collect::<Result<Vec<_>, Error>>()?;
 
+        let mut chain_update = self.chain_update();
+        // FIXME(spice): Consider if it would be better to extract state transition information
+        // directly from apply result.
+        let should_save_state_transition_data = true;
+        chain_update.apply_chunk_postprocessing(
+            &block,
+            results.clone(),
+            should_save_state_transition_data,
+        )?;
+        chain_update.commit()?;
+
+        // FIXME(spice): create some helpers to make it easier to follow?
         for result in &results {
             let (shard_uid, apply_result) = match result {
                 ShardUpdateResult::NewChunk(NewChunkResult {
@@ -281,26 +413,191 @@ impl ChunkExecutorActor {
             let chunk_header =
                 chunk_headers.get(shard_index).ok_or(Error::InvalidShardId(shard_id))?;
 
+            let prev_chunk_header =
+                Chain::get_prev_chunk_header(self.epoch_manager.as_ref(), &prev_block, shard_id)
+                    .unwrap();
+
+            let prev_outgoing_receipts = self.chain_store.get_outgoing_receipts_for_shard(
+                self.epoch_manager.as_ref(),
+                *prev_block.hash(),
+                shard_id,
+                prev_chunk_header.height_included(),
+            )?;
             let chunk_extra = self.chain_store.get_chunk_extra(&prev_block.hash(), shard_uid)?;
-            let chunk_header = chunk_header.clone().into_spice_chunk_execution_header(&chunk_extra);
+            let prev_outgoing_receipts_root =
+                self.calculate_receipts_root(&shard_layout, &prev_outgoing_receipts)?;
+            let spice_chunk_header = chunk_header
+                .clone()
+                .into_spice_chunk_execution_header(&chunk_extra, prev_outgoing_receipts_root);
 
             let receipt_proofs = make_outgoing_receipts_proofs(
-                &chunk_header,
+                &spice_chunk_header,
                 apply_result.outgoing_receipts.clone(),
                 self.epoch_manager.as_ref(),
             )?;
+
+            {
+                // FIXME(spice): consider if recording of execution results shoud happen here.
+                let chunk_extra = self.chain_store.get_chunk_extra(&block_hash, shard_uid)?;
+                let outgoing_receipts_root =
+                    self.calculate_receipts_root(&shard_layout, &apply_result.outgoing_receipts)?;
+                self.core_processor.record_execution_result(
+                    ExecutionResult {
+                        block_hash: *block_hash,
+                        chunk_hash: chunk_header.chunk_hash(),
+                        shard_id,
+                        chunk_extra,
+                        outgoing_receipts_root,
+                    },
+                    &self.myself_sender,
+                )
+            }
             self.send_outgoing_receipts(*block_hash, receipt_proofs);
+
+            // FIXME(spice): Consider refactoring to better handle data that is common
+            // FIXME(spice): Make helpers to deal with witnesses
+
+            let (main_transition, applied_receipts_hash, contract_updates) = if chunk_header
+                .is_genesis()
+            {
+                (
+                    ChunkStateTransition {
+                        block_hash: *block_hash,
+                        base_state: Default::default(),
+                        post_state_root: apply_result.new_root,
+                    },
+                    hash(&borsh::to_vec::<[Receipt]>(&[]).unwrap()),
+                    ContractUpdates::default(),
+                )
+            } else {
+                let stored_chunk_state_transition_data = self
+                        .chain_store
+                        .store()
+                        .get_ser(
+                            near_store::DBCol::StateTransitionData,
+                            &near_primitives::utils::get_block_shard_id(block_hash, shard_id),
+                        )?
+                        .ok_or_else(|| {
+                            let message = format!(
+                                "Missing transition state proof for block {block_hash} and shard {shard_id}"
+                            );
+                            Error::Other(message)
+                        })?;
+                let StoredChunkStateTransitionData::V1(StoredChunkStateTransitionDataV1 {
+                    base_state,
+                    receipts_hash,
+                    contract_accesses,
+                    contract_deploys,
+                }) = stored_chunk_state_transition_data;
+                let contract_updates = ContractUpdates {
+                    contract_accesses: contract_accesses.into_iter().collect(),
+                    contract_deploys: contract_deploys.into_iter().map(|c| c.into()).collect(),
+                };
+                (
+                    ChunkStateTransition {
+                        block_hash: *block_hash,
+                        base_state,
+                        // FIXME(spice): If can, use data from apply_result here.
+                        post_state_root: *self
+                            .chain_store
+                            .get_chunk_extra(block_hash, &shard_uid)?
+                            .state_root(),
+                    },
+                    receipts_hash,
+                    contract_updates,
+                )
+            };
+
+            // FIXME(spice): Make sure this logic is correct with resharding.
+            let source_receipt_proofs: HashMap<ChunkHash, ReceiptProof> = {
+                let receipt_proofs = self.get_incoming_receipts(prev_hash, shard_id)?;
+                let prev_block_shard_layout =
+                    self.epoch_manager.get_shard_layout(prev_block.header().epoch_id())?;
+                receipt_proofs
+                    .iter()
+                    .map(|proof| -> Result<_, Error> {
+                        let from_shard_id = proof.1.from_shard_id;
+                        let from_shard_index =
+                            prev_block_shard_layout.get_shard_index(from_shard_id)?;
+                        let from_chunk_hash = prev_block
+                            .chunks()
+                            .get(from_shard_index)
+                            .ok_or(Error::InvalidShardId(proof.1.from_shard_id))?
+                            .chunk_hash();
+                        Ok((from_chunk_hash, proof.clone()))
+                    })
+                    .try_collect()?
+            };
+            // FIXME(spice): although implicit_transitions are mostly used for missing chunks, they
+            // are also used for resharding so we need to include resharding in
+            // implicit_transitions when it happens. It would also mean updating
+            // main_transition_shard_id accordingly.
+            let implicit_transitions = Vec::new();
+            let main_transition_shard_id = shard_id;
+
+            let chunk = get_chunk_clone_from_header(&self.chain_store, chunk_header)?;
+            let state_witness = ChunkStateWitness::new(
+                // FIXME(spice): refactor to avoid unwrap.
+                me.unwrap().clone(),
+                *epoch_id,
+                // FIXME(spice): Add a note somewhere that this chunk header's meaning between
+                // spice and non-spice. For spice it's current chunk application of which we are
+                // witnessing, and for non-spice it's chunk_header of the chunk following the one
+                // application of which we are witnessing.
+                chunk_header.clone(),
+                main_transition,
+                source_receipt_proofs,
+                // (Could also be derived from iterating through the receipts, but
+                // that defeats the purpose of this check being a debugging
+                // mechanism.)
+                applied_receipts_hash,
+                chunk.to_transactions().to_vec(),
+                implicit_transitions,
+            );
+
+            // FIXME(spice): Do conditionally based on config (same as in client).
+            self.chain_store.save_latest_chunk_state_witness(&state_witness)?;
+
+            // FIXME(spice): No need to always validate your own witnes, but good for debugging.
+            match self.core_processor.validate_state_witness(
+                state_witness.clone(),
+                &self.chain_store,
+                self.epoch_manager.as_ref(),
+                self.runtime_adapter.as_ref(),
+            ) {
+                Ok(_) => {
+                    println!("state witness validation success!");
+                }
+                Err(err) => {
+                    println!("Failed state witness validation: {err:?}");
+                    // FIXME(spice): don't panic
+                    panic!("Failed state witness validation: {err:?}");
+                }
+            };
+
+            // FIXME(spice): If we are one of the validators bypass witness validation and endorse the
+            // chunk immediately.
+            self.send_witness_to_chunk_validators(
+                state_witness,
+                contract_updates,
+                main_transition_shard_id,
+            );
         }
 
-        let mut chain_update = self.chain_update();
-        let should_save_state_transition_data = false;
-        chain_update.apply_chunk_postprocessing(
-            &block,
-            results,
-            should_save_state_transition_data,
-        )?;
-        chain_update.commit()?;
         Ok(())
+    }
+
+    fn send_witness_to_chunk_validators(
+        &mut self,
+        state_witness: ChunkStateWitness,
+        contract_updates: ContractUpdates,
+        main_transition_shard_id: ShardId,
+    ) {
+        self.partial_witness_adapter.send(DistributeStateWitnessRequest {
+            state_witness,
+            contract_updates,
+            main_transition_shard_id,
+        });
     }
 
     fn send_outgoing_receipts(
@@ -353,16 +650,31 @@ impl ChunkExecutorActor {
 
             let shard_uid = &shard_context.shard_uid;
             let chunk_extra = self.chain_store.get_chunk_extra(prev_block_hash, shard_uid)?;
-            let chunk_header = chunk_header.clone().into_spice_chunk_execution_header(&chunk_extra);
 
-            ShardUpdateReason::NewChunk(NewChunkData {
+            let prev_chunk_header =
+                Chain::get_prev_chunk_header(self.epoch_manager.as_ref(), &prev_block, shard_id)
+                    .unwrap();
+            let prev_outgoing_receipts = self.chain_store.get_outgoing_receipts_for_shard(
+                self.epoch_manager.as_ref(),
+                *prev_block.hash(),
+                shard_id,
+                prev_chunk_header.height_included(),
+            )?;
+            let prev_outgoing_receipts_root =
+                self.calculate_receipts_root(&shard_layout, &prev_outgoing_receipts)?;
+            let chunk_header = chunk_header
+                .clone()
+                .into_spice_chunk_execution_header(&chunk_extra, prev_outgoing_receipts_root);
+
+            let new_chunk_data = NewChunkData {
                 chunk_header,
                 transactions: chunk.into_transactions(),
                 transaction_validity_check_results: tx_valid_list,
                 receipts,
                 block,
                 storage_context,
-            })
+            };
+            ShardUpdateReason::NewChunk(new_chunk_data)
         } else {
             ShardUpdateReason::OldChunk(OldChunkData {
                 block,
@@ -482,7 +794,13 @@ impl ChunkExecutorActor {
             // We cannot filter out correctly when receiving receipts since we may receive them
             // before we know about the corresponding block and can decide which receipts we care
             // about.
-            block_receipts.into_iter().filter(|proof| {
+            block_receipts.into_iter()
+            // FIXME(spice): right now we are recording all receipts we receive. We would later
+            // need to make sure not to record duplicates.
+            // FIXME(spice): when receiving receipts validate them against previous execution
+            // result.
+            .unique_by(|proof| (proof.1.from_shard_id, proof.1.to_shard_id))
+            .filter(|proof| {
                 let is_me = true;
                 self.shard_tracker.cares_about_shard_this_or_next_epoch(
                     me,
@@ -497,13 +815,151 @@ impl ChunkExecutorActor {
 
         let mut chain_update = self.chain_update();
         for (to_shard_id, mut proofs) in receipt_proofs {
-            let shuffle_salt = block_hash;
-            shuffle_receipt_proofs(&mut proofs, shuffle_salt);
+            // FIXME(spice): Don't relay on sorting here, but for example use order of chunks in a
+            // block. Has to be consistent with what is done in witness validation so that receipt
+            // order is the same. Order also shouldn't depend on the order in which we receive
+            // incoming receipts.
+            proofs.sort_by_key(|proof| proof.1.from_shard_id);
+            let receipts_shuffle_salt = block_hash;
+            shuffle_receipt_proofs(&mut proofs, receipts_shuffle_salt);
 
             tracing::debug!(target: "chunk_executor", %block_hash, ?to_shard_id, ?proofs, "saving incoming receipts");
+            // FIXME(spice): Consired using a separate col for storage incoming receipts,
+            // since meaning of the key may be different (prev hash instead of current
+            // hash).
             chain_update.save_incoming_receipt(&block_hash, to_shard_id, Arc::new(proofs));
         }
         chain_update.commit()?;
         Ok(())
+    }
+}
+
+// FIXME(spice): Handling of state witnesses and endorsements likely should happen in a separate
+// agent.
+impl Handler<ChunkStateWitnessMessage> for ChunkExecutorActor {
+    // FIXME(spice): decide if this is required. Not sure what it is.
+    // #[perf]
+    fn handle(&mut self, msg: ChunkStateWitnessMessage) {
+        let ChunkStateWitnessMessage { witness, raw_witness_size } = msg;
+        let Some(signer) = self.validator_signer.get() else {
+            tracing::error!(target: "spice_core", ?witness, "Received a chunk state witness but this is not a validator node.");
+            return;
+        };
+        if let Err(err) = self.process_chunk_state_witness(witness, raw_witness_size, signer) {
+            tracing::error!(target: "client", ?err, "Error processing chunk state witness");
+        }
+    }
+}
+
+impl ChunkExecutorActor {
+    pub fn process_chunk_state_witness(
+        &mut self,
+        witness: ChunkStateWitness,
+        raw_witness_size: ChunkStateWitnessSize,
+        signer: Arc<ValidatorSigner>,
+    ) -> Result<(), Error> {
+        tracing::debug!(
+            target: "spice_core",
+            chunk_hash=?witness.chunk_header.chunk_hash(),
+            shard_id=?witness.chunk_header.shard_id(),
+            "process_chunk_state_witness",
+        );
+
+        // Send the acknowledgement for the state witness back to the chunk producer.
+        // This is currently used for network roundtrip time measurement, so we do not need to
+        // wait for validation to finish.
+        self.send_state_witness_ack(&witness, &signer);
+
+        // FIXME(spice): based on client config - should likely optionally save latest state witness.
+        // if self.config.save_latest_witnesses {
+        //     self.chain.chain_store.save_latest_chunk_state_witness(&witness)?;
+        // }
+        let chunk_hash = witness.chunk_header.chunk_hash();
+
+        match self.core_processor.validate_state_witness_and_send_endorsements(
+            witness.clone(),
+            &self.chain_store,
+            self.epoch_manager.as_ref(),
+            self.runtime_adapter.as_ref(),
+            &self.network_adapter.clone().into_sender(),
+            &signer,
+        ) {
+            Ok(_) => {
+                tracing::info!(target: "adhoc", ?chunk_hash, "validated state witness successfully");
+                Ok(())
+            }
+            // FIXME(spice): Check block and execution results explicitly instead of relying on
+            // error which may happen for unrelated reasons.
+            Err(Error::DBNotFoundErr(err)) => {
+                tracing::info!(target: "adhoc", ?chunk_hash, ?err, "saving orphaned state witness; there're either not enough execution results or relevant block isn't available yet");
+                self.handle_orphan_state_witness(witness, raw_witness_size)
+            }
+            Err(err) => Err(err),
+        }
+    }
+
+    fn process_ready_orphan_state_witnesses(
+        &mut self,
+        // FIXME(spice): don't need the whole block, only prev_hash
+        new_block: &Block,
+        signer: Arc<ValidatorSigner>,
+    ) -> Result<(), Error> {
+        let prev_hash = new_block.header().prev_hash();
+        tracing::debug!(target: "adhoc", ?prev_hash, block_hash=?new_block.hash(), "processing orphan state witnesses");
+        let ready_witnesses = self
+            .orphan_witness_pool
+            // in spice chunk_header belongs to the block we want to process, not to the next one.
+            .take_state_witnesses_waiting_for_block(prev_hash);
+        for witness in ready_witnesses {
+            if !self.core_processor.do_all_execution_results_exist(prev_hash, &self.chain_store)? {
+                tracing::info!(target: "adhoc", ?prev_hash, "block is available, but still not enough execution results for witness execution");
+                // We don't care about size at this point.
+                self.orphan_witness_pool.add_orphan_state_witness(witness, 0);
+                continue;
+            }
+            self.core_processor.validate_state_witness_and_send_endorsements(
+                witness.clone(),
+                &self.chain_store,
+                self.epoch_manager.as_ref(),
+                self.runtime_adapter.as_ref(),
+                &self.network_adapter.clone().into_sender(),
+                &signer,
+            )?;
+        }
+        Ok(())
+    }
+
+    // FIXME(spice): Reuse, if possible, parts from Client's orphan_witness_handling.rs to do some
+    // validations before writing witness to the pool.
+    // FIMXE(spice): May be a good idea in addition to check that witness is for a block we know about.
+    pub fn handle_orphan_state_witness(
+        &mut self,
+        witness: ChunkStateWitness,
+        witness_size: usize,
+    ) -> Result<(), Error> {
+        self.orphan_witness_pool.add_orphan_state_witness(witness, witness_size);
+        Ok(())
+    }
+
+    // FIXME(spice): Dedup with what's in chunk_validators/mod.rs
+    fn send_state_witness_ack(&self, witness: &ChunkStateWitness, signer: &Arc<ValidatorSigner>) {
+        // In production PartialWitnessActor does not forward a state witness to the chunk producer that
+        // produced the witness. However some tests bypass PartialWitnessActor, thus when a chunk producer
+        // receives its own state witness, we log a warning instead of panicking.
+        // TODO: Make sure all tests run with "test_features" and panic for non-test builds.
+        if signer.validator_id() == &witness.chunk_producer {
+            tracing::warn!(
+                "Validator {:?} received state witness from itself. Witness={:?}",
+                signer.validator_id(),
+                witness
+            );
+            return;
+        }
+        self.network_adapter.send(PeerManagerMessageRequest::NetworkRequests(
+            NetworkRequests::ChunkStateWitnessAck(
+                witness.chunk_producer.clone(),
+                ChunkStateWitnessAck::new(witness),
+            ),
+        ));
     }
 }

@@ -5,7 +5,7 @@
 //! Unfortunately, this is not the case today. We are in the process of refactoring ClientActor
 //! <https://github.com/near/nearcore/issues/7899>
 
-use crate::chunk_executor_actor::ExecutorBlock;
+use crate::chunk_executor_actor::{ChunkExecutorAdapter, ExecutorBlock};
 #[cfg(feature = "test_features")]
 pub use crate::chunk_producer::AdvProduceChunksMode;
 #[cfg(feature = "test_features")]
@@ -40,7 +40,8 @@ use near_chain::state_snapshot_actor::SnapshotCallbacks;
 use near_chain::test_utils::format_hash;
 use near_chain::types::RuntimeAdapter;
 use near_chain::{
-    Block, BlockHeader, ChainGenesis, Provenance, byzantine_assert, near_chain_primitives,
+    Block, BlockHeader, ChainGenesis, ChainStoreAccess, Provenance, byzantine_assert,
+    near_chain_primitives,
 };
 use near_chain_configs::{ClientConfig, MutableValidatorSigner, ReshardingHandle};
 use near_chain_primitives::error::EpochErrorResultToChainError;
@@ -174,6 +175,8 @@ pub fn start_client(
         chain_sender_for_state_sync.as_multi_sender(),
         client_sender_for_client.as_multi_sender(),
         PROTOCOL_UPGRADE_SCHEDULE.clone(),
+        // FIXME(spice)
+        todo!(),
     )
     .unwrap();
     let resharding_handle = client.chain.resharding_manager.resharding_handle.clone();
@@ -268,7 +271,7 @@ pub struct ClientActorInner {
     /// Manages updating the config.
     config_updater: Option<ConfigUpdater>,
 
-    chunk_executor_sender: Sender<ExecutorBlock>,
+    chunk_executor_adapter: ChunkExecutorAdapter,
 }
 
 impl messaging::Actor for ClientActorInner {
@@ -342,7 +345,7 @@ impl ClientActorInner {
         adv: crate::adversarial::Controls,
         config_updater: Option<ConfigUpdater>,
         sync_jobs_sender: SyncJobsSenderForClient,
-        chunk_executor_sender: Sender<ExecutorBlock>,
+        chunk_executor_adapter: ChunkExecutorAdapter,
     ) -> Result<Self, Error> {
         if let Some(vs) = &client.validator_signer.get() {
             info!(target: "client", "Starting validator node: {}", vs.validator_id());
@@ -381,7 +384,7 @@ impl ClientActorInner {
             shutdown_signal,
             config_updater,
             sync_jobs_sender,
-            chunk_executor_sender,
+            chunk_executor_adapter,
         })
     }
 }
@@ -1471,7 +1474,7 @@ impl ClientActorInner {
             self.send_chunks_metrics(&block);
             self.send_block_metrics(&block);
             self.check_send_announce_account(*block.header().last_final_block(), signer);
-            self.chunk_executor_sender.send(ExecutorBlock { block_hash: accepted_block });
+            self.chunk_executor_adapter.send(ExecutorBlock { block_hash: accepted_block });
         }
     }
 
@@ -1937,20 +1940,34 @@ impl Handler<GetClientConfig> for ClientActorInner {
 impl Handler<ChunkStateWitnessMessage> for ClientActorInner {
     #[perf]
     fn handle(&mut self, msg: ChunkStateWitnessMessage) {
-        let ChunkStateWitnessMessage { witness, raw_witness_size } = msg;
-        let signer = self.client.validator_signer.get();
-        if let Err(err) =
-            self.client.process_chunk_state_witness(witness, raw_witness_size, None, signer)
-        {
-            tracing::error!(target: "client", ?err, "Error processing chunk state witness");
-        }
+        // FIXME(spice): Send directly from whereever we send this to client.
+        self.chunk_executor_adapter.send(msg);
+
+        // FIXME(spice):
+        // let ChunkStateWitnessMessage { witness, raw_witness_size } = msg;
+        // let signer = self.client.validator_signer.get();
+        // if let Err(err) =
+        //     self.client.process_chunk_state_witness(witness, raw_witness_size, None, signer)
+        // {
+        //     tracing::error!(target: "client", ?err, "Error processing chunk state witness");
+        // }
     }
 }
 
 impl Handler<ChunkEndorsementMessage> for ClientActorInner {
     #[perf]
     fn handle(&mut self, msg: ChunkEndorsementMessage) {
-        if let Err(err) = self.client.chunk_endorsement_tracker.process_chunk_endorsement(msg.0) {
+        // FIXME(spice): May make sense to have this handler in a spice agent and logic completely
+        // separated instead of branching here.
+        // if let Err(err) = self.client.chunk_endorsement_tracker.process_chunk_endorsement(msg.0) {
+        //     tracing::error!(target: "client", ?err, "Error processing chunk endorsement");
+        // }
+        if let Err(err) = self.client.core_statements_processor.process_chunk_endorsement(
+            self.client.epoch_manager.as_ref(),
+            msg.0,
+            &self.client.chain.chain_store().store(),
+            &self.chunk_executor_adapter,
+        ) {
             tracing::error!(target: "client", ?err, "Error processing chunk endorsement");
         }
     }

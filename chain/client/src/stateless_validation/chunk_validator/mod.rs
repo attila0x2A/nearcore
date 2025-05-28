@@ -166,7 +166,7 @@ impl ChunkValidator {
                 runtime_adapter.as_ref(),
                 &cache,
             ) {
-                Ok(()) => {
+                Ok(_) => {
                     send_chunk_endorsement_to_block_producers(
                         &chunk_header,
                         epoch_manager.as_ref(),

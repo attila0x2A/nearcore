@@ -28,6 +28,7 @@ use near_chunks::shards_manager_actor::{ShardsManagerActor, start_shards_manager
 use near_chunks::test_utils::SynchronousShardsManagerAdapter;
 use near_client::adversarial::Controls;
 use near_client::client_actor::ClientActorInner;
+use near_client::spice_core::CoreStatementsProcessor;
 use near_client::{
     Client, ClientActor, PartialWitnessActor, PartialWitnessSenderForClient, StartClientResult,
     SyncStatus, TxRequestHandler, TxRequestHandlerConfig, ViewClientActor, ViewClientActorInner,
@@ -1208,6 +1209,7 @@ pub fn setup_client_with_runtime(
         noop().into_multi_sender(), // state sync ignored for these tests
         noop().into_multi_sender(), // apply chunks ping not necessary for these tests
         PROTOCOL_UPGRADE_SCHEDULE.clone(),
+        CoreStatementsProcessor::new(),
     )
     .unwrap();
     client.sync_handler.sync_status = SyncStatus::NoSync;

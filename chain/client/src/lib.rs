@@ -43,6 +43,7 @@ pub mod debug;
 pub mod gc_actor;
 mod info;
 pub mod metrics;
+pub mod spice_core;
 mod stateless_validation;
 pub mod sync;
 pub mod sync_jobs_actor;

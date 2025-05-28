@@ -432,6 +432,9 @@ impl ShardChunkHeader {
     pub fn into_spice_chunk_execution_header(
         mut self,
         prev_block_chunk_extra: &ChunkExtra,
+        // FIXME(spice): It's likely not required to have this available at all (even for
+        // execution).
+        prev_outgoing_receipts_root: CryptoHash,
     ) -> Self {
         if let Self::V3(header) = &mut self {
             match &mut header.inner {
@@ -455,9 +458,12 @@ impl ShardChunkHeader {
                     inner.prev_balance_burnt = chunk_extra.balance_burnt();
                     inner.prev_validator_proposals = chunk_extra.validator_proposals().collect();
                     inner.bandwidth_requests = chunk_extra.bandwidth_requests().cloned().unwrap();
+                    inner.prev_outgoing_receipts_root = prev_outgoing_receipts_root;
                     inner.purpose = SpiceChunkPurpose::ChunkExecution;
                 }
             }
+            // FIXME(spice): not entierely sure if hash should change for spice execution chunk.
+            header.hash = ShardChunkHeaderV3::compute_hash(&header.inner);
         }
         self
     }

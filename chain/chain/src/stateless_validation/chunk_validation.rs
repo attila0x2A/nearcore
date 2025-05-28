@@ -9,7 +9,6 @@ use crate::sharding::{get_receipts_shuffle_salt, shuffle_receipt_proofs};
 use crate::stateless_validation::processing_tracker::ProcessingDoneTracker;
 use crate::store::filter_incoming_receipts_for_shard;
 use crate::types::{ApplyChunkBlockContext, ApplyChunkResult, RuntimeAdapter, StorageDataSource};
-use crate::validate::validate_chunk_with_chunk_extra_and_receipts_root;
 use crate::{Chain, ChainStore, ChainStoreAccess};
 use lru::LruCache;
 use near_async::futures::AsyncComputationSpawnerExt;
@@ -241,7 +240,7 @@ fn get_state_witness_block_range(
 /// Checks if chunk validation requires a transition to new shard layout in the
 /// block with `prev_hash`, with a split resulting in the `shard_uid`, and if
 /// so, returns the corresponding resharding transition parameters.
-fn get_resharding_transition(
+pub fn get_resharding_transition(
     epoch_manager: &dyn EpochManagerAdapter,
     prev_header: &BlockHeader,
     shard_uid: ShardUId,
@@ -513,13 +512,15 @@ fn validate_receipt_proof(
     Ok(())
 }
 
+/// Validates state witness by applying the chunk.
+/// Returns resulting chunk extra and outoging receipts root.
 pub fn validate_chunk_state_witness(
     state_witness: ChunkStateWitness,
     pre_validation_output: PreValidationOutput,
     epoch_manager: &dyn EpochManagerAdapter,
     runtime_adapter: &dyn RuntimeAdapter,
     main_state_transition_cache: &MainStateTransitionCache,
-) -> Result<(), Error> {
+) -> Result<(ChunkExtra, CryptoHash), Error> {
     let _timer = crate::stateless_validation::metrics::CHUNK_STATE_WITNESS_VALIDATION_TIME
         .with_label_values(&[&state_witness.chunk_header.shard_id().to_string()])
         .start_timer();
@@ -693,13 +694,17 @@ pub fn validate_chunk_state_witness(
 
     // Finally, verify that the newly proposed chunk matches everything we have computed.
     let (outgoing_receipts_root, _) = merklize(&outgoing_receipts_hashes);
-    validate_chunk_with_chunk_extra_and_receipts_root(
-        &chunk_extra,
-        &state_witness.chunk_header,
-        &outgoing_receipts_root,
-    )?;
+    // FIXME(spice): Have a spice branching here and for spice either avoid or implement different checks.
+    // Not sure if anything is required since execution results derived here will be send as part
+    // of endorsements and aren't part of the witness atm.
 
-    Ok(())
+    // validate_chunk_with_chunk_extra_and_receipts_root(
+    //     &chunk_extra,
+    //     &state_witness.chunk_header,
+    //     &outgoing_receipts_root,
+    // )?;
+
+    Ok((chunk_extra, outgoing_receipts_root))
 }
 
 pub fn apply_result_to_chunk_extra(
@@ -782,7 +787,7 @@ impl Chain {
                 runtime_adapter.as_ref(),
                 &MainStateTransitionCache::default(),
             ) {
-                Ok(()) => {
+                Ok(_) => {
                     tracing::debug!(
                         parent: &parent_span,
                         ?shard_id,

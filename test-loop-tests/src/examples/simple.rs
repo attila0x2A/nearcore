@@ -7,6 +7,7 @@ use near_chain_configs::{ClientConfig, MutableConfigValue, TrackedShardsConfig};
 use near_chunks::shards_manager_actor::ShardsManagerActor;
 use near_client::Client;
 use near_client::client_actor::ClientActorInner;
+use near_client::spice_core::CoreStatementsProcessor;
 use near_client::sync_jobs_actor::SyncJobsActor;
 use near_epoch_manager::EpochManager;
 use near_epoch_manager::shard_tracker::ShardTracker;
@@ -103,6 +104,7 @@ fn test_client_with_simple_test_loop() {
         noop().into_multi_sender(),
         client_adapter.as_multi_sender(),
         PROTOCOL_UPGRADE_SCHEDULE.clone(),
+        CoreStatementsProcessor::new(),
     )
     .unwrap();
 
@@ -130,7 +132,7 @@ fn test_client_with_simple_test_loop() {
         Default::default(),
         None,
         sync_jobs_adapter.as_multi_sender(),
-        noop().into_sender(),
+        noop().into_multi_sender(),
     )
     .unwrap();
 

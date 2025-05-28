@@ -165,7 +165,7 @@ impl Chain {
         Ok(())
     }
 
-    fn create_genesis_chunk_extra(
+    pub fn create_genesis_chunk_extra(
         state_root: &StateRoot,
         gas_limit: Gas,
         genesis_protocol_version: ProtocolVersion,
