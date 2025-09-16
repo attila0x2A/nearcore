@@ -100,6 +100,30 @@ impl From<EpochError> for Error {
     }
 }
 
+#[derive(Debug, thiserror::Error)]
+pub(crate) enum ReceiveDataError {
+    #[error("failed receiving data with relevant block available")]
+    ReceivingDataWithBlock(Error),
+    #[error("failed receiving data with no block available")]
+    AddingPartialData(Error),
+    #[error("Near chain error: {0}")]
+    NearChainError(#[from] near_chain::Error),
+}
+
+impl ReceiveDataError {
+    fn data_is_known_error(&self) -> Option<&DataIsKnownError> {
+        let inner = match self {
+            ReceiveDataError::ReceivingDataWithBlock(error) => error,
+            ReceiveDataError::AddingPartialData(error) => error,
+            ReceiveDataError::NearChainError(_) => return None,
+        };
+        let Error::DataIsKnown(err) = &inner else {
+            return None;
+        };
+        Some(err)
+    }
+}
+
 // TODO(spice): Separate actor into separate sender and receiver actors.
 pub struct SpiceDataDistributorActor {
     chain_store: ChainStoreAdapter,
@@ -204,17 +228,13 @@ impl Handler<SpiceIncomingPartialData> for SpiceDataDistributorActor {
         let Err(err) = self.receive_data(data, sender) else {
             return;
         };
-        match err {
-            Error::DataIsKnown(err) => {
-                tracing::debug!(target: "spice_data_distribution", ?err, ?data_id, ?commitment, "received data we already have")
-            }
-            err =>
-            // TODO(spice): Implement banning or de-prioritization of nodes from which we receive
-            // invalid data.
-            {
-                tracing::error!(target: "spice_data_distribution", ?err, ?data_id, ?commitment, "failed to handle receiving partial data")
-            }
+        if let Some(err) = err.data_is_known_error() {
+            tracing::debug!(target: "spice_data_distribution", ?err, ?data_id, ?commitment, "received data we already have");
+            return;
         }
+        // TODO(spice): Implement banning or de-prioritization of nodes from which we receive
+        // invalid data.
+        tracing::error!(target: "spice_data_distribution", ?err, ?data_id, ?commitment, "failed to handle receiving partial data")
     }
 }
 
@@ -267,8 +287,8 @@ impl SpiceDataDistributorActor {
         };
         let me = signer.validator_id();
         let (recipients, producers) = self.recipients_and_producers(&data_id, &block)?;
-        // FIXME: check in chunk executor if we are in chunk producers for shards and go back to
-        // debug_assert
+        // FIXME: when sending receipts check in chunk executor if we are in chunk producers for shards and go back to debug_assert
+        // Do the same for witness distribution (don't create witness if we aren't producer)
         // debug_assert!(producers.contains(me), "producers({producers:?}).contains({me:?}");
         if !producers.contains(me) {
             tracing::debug!(target: "spice_data_distribution", ?producers, ?me, "producers doesn't containe node validator signer");
@@ -366,16 +386,19 @@ impl SpiceDataDistributorActor {
         &mut self,
         data: SpicePartialData,
         sender: PeerId,
-    ) -> Result<(), Error> {
+    ) -> Result<(), ReceiveDataError> {
         let block_hash = data.id.block_hash();
         let block = match self.chain_store.get_block(block_hash) {
             Ok(block) => block,
             Err(near_chain::Error::DBNotFoundErr(_)) => {
-                return self.add_pending_partial_data(data, sender);
+                return self
+                    .add_pending_partial_data(data, sender)
+                    .map_err(ReceiveDataError::AddingPartialData);
             }
             Err(err) => return Err(err.into()),
         };
         self.receive_data_with_block(data, sender, &block)
+            .map_err(ReceiveDataError::ReceivingDataWithBlock)
     }
 
     fn add_pending_partial_data(
@@ -433,6 +456,9 @@ impl SpiceDataDistributorActor {
             .collect::<HashSet<PublicKey>>()
             .contains(sender.public_key())
         {
+            // FIXME:
+            tracing::warn!(target: "spice_data_distribution", ?producers, ?sender,
+                "received data from node that isn't a producer");
             return Err(Error::SenderIsNotProducer);
         }
         if !recipients.contains(me) {
