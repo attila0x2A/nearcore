@@ -1,7 +1,7 @@
 use near_primitives::hash::CryptoHash;
 use near_primitives::merkle::MerklePath;
 use near_primitives::network::PeerId;
-use near_primitives::types::{MerkleHash, ShardId};
+use near_primitives::types::{AccountId, MerkleHash, ShardId};
 
 #[derive(actix::Message, Debug, Clone)]
 #[rtype(result = "()")]
@@ -46,4 +46,7 @@ pub struct SpicePartialData {
     pub id: SpiceDataIdentifier,
     pub commitment: SpiceDataCommitment,
     pub parts: Vec<SpiceDataPart>,
+    // FIXME: If this works include signature as well and restructure to have signed_partial_data or
+    // something and signature as top-level fields.
+    pub sender: AccountId,
 }
