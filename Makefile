@@ -106,9 +106,9 @@ test-features-release:
 
 # TODO(spice): Remove once spice is a protocol feature and not compilation flag.
 #? feature-spice-release: build release version of neard with protocol_feature_spice feature
-feature-spice-release: NEAR_RELEASE_BUILD=dev-release
+feature-spice-release: NEAR_RELEASE_BUILD=release
 feature-spice-release:
-	cargo build -p neard --profile=dev-release --features=protocol_feature_spice
+	cargo build -p neard --profile=release --features=protocol_feature_spice
 
 .PHONY: docker-nearcore docker-nearcore-nightly release neard debug
 .PHONY: perf-release perf-debug nightly-release nightly-debug assertions-release sandbox
