@@ -1,6 +1,6 @@
 # FIXME: DO NOT MERGE
 # FIXME: Would need to create a separarte workflow if merging to master.
-name: Neard spice feature binary release
+name: Neard test features binary release
 
 on:
   workflow_dispatch:
