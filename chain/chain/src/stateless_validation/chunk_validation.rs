@@ -569,6 +569,8 @@ pub fn validate_chunk_state_witness_impl(
             (MainTransition::Genesis { chunk_extra, .. }, _) => (chunk_extra, vec![]),
             (MainTransition::NewChunk { new_chunk_data, .. }, None) => {
                 let chunk_header = new_chunk_data.chunk_header.clone();
+                // FIXME: remove
+                tracing::info!(target: "fixme", ?new_chunk_data, ?shard_uid,  "validating chunk");
                 let NewChunkResult { apply_result: mut main_apply_result, .. } = apply_new_chunk(
                     ApplyChunkReason::ValidateChunkStateWitness,
                     &span,

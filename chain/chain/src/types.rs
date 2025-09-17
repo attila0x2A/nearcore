@@ -244,7 +244,7 @@ impl ChainGenesis {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub enum StorageDataSource {
     /// Full state data is present in DB.
     Db,
@@ -296,7 +296,7 @@ pub enum BlockType {
     Optimistic,
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct ApplyChunkBlockContext {
     pub block_type: BlockType,
     pub height: BlockHeight,

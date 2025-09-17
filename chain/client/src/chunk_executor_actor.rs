@@ -520,6 +520,7 @@ impl ChunkExecutorActor {
         let shard_index = shard_layout.get_shard_index(shard_id).unwrap();
         let chunks = block.chunks();
         let chunk_header = chunks.get(shard_index).unwrap();
+        debug_assert_eq!(chunk_header.shard_id(), shard_id);
 
         if self
             .epoch_manager
@@ -695,6 +696,8 @@ impl ChunkExecutorActor {
             shard_id,
             cached_shard_update_key,
             Box::new(move |parent_span| -> Result<ShardUpdateResult, Error> {
+                // FIXME: remove
+                tracing::info!(target: "fixme", ?shard_update_reason, ?shard_context, "applying chunk");
                 Ok(process_shard_update(
                     parent_span,
                     runtime.as_ref(),

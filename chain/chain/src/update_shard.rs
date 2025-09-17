@@ -40,6 +40,7 @@ pub enum ShardUpdateResult {
     OldChunk(OldChunkResult),
 }
 
+#[derive(Debug)]
 pub struct NewChunkData {
     pub chunk_header: ShardChunkHeader,
     pub transactions: SignedValidPeriodTransactions,
@@ -48,6 +49,7 @@ pub struct NewChunkData {
     pub storage_context: StorageContext,
 }
 
+#[derive(Debug)]
 pub struct OldChunkData {
     pub prev_chunk_extra: ChunkExtra,
     pub block: ApplyChunkBlockContext,
@@ -56,6 +58,7 @@ pub struct OldChunkData {
 
 /// Reason to update a shard when new block appears on chain.
 #[allow(clippy::large_enum_variant)]
+#[derive(Debug)]
 pub enum ShardUpdateReason {
     /// Block has a new chunk for the shard.
     /// Contains chunk itself and all new incoming receipts to the shard.
@@ -79,6 +82,12 @@ pub struct StorageContext {
     /// Data source used for processing shard update.
     pub storage_data_source: StorageDataSource,
     pub state_patch: SandboxStatePatch,
+}
+
+impl std::fmt::Debug for StorageContext {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.storage_data_source.fmt(f)
+    }
 }
 
 /// Processes shard update with given block and shard.

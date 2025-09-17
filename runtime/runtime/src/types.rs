@@ -1,6 +1,6 @@
 use near_primitives::transaction::SignedTransaction;
 
-#[derive(Clone)]
+#[derive(Clone, Debug)]
 pub struct SignedValidPeriodTransactions {
     /// Transactions.
     ///
