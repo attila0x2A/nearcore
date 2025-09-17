@@ -812,7 +812,7 @@ impl<'a> ChainStoreUpdate<'a> {
                 .store()
                 .iter_prefix(
                     DBCol::endorsements(),
-                    &get_endorsements_key_prefix(&chunk_production_key),
+                    &get_endorsements_key_prefix(block.hash(), &chunk_production_key),
                 )
                 .map(|item| item.map(|(key, _)| key))
                 .collect::<io::Result<Vec<_>>>()?;
@@ -821,7 +821,7 @@ impl<'a> ChainStoreUpdate<'a> {
             }
             self.gc_col(
                 DBCol::execution_results(),
-                &get_execution_results_key(&chunk_production_key),
+                &get_execution_results_key(block.hash(), &chunk_production_key),
             );
         }
         self.gc_col(DBCol::uncertified_chunks(), block.header().hash().as_ref());

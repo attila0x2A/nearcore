@@ -203,24 +203,41 @@ pub fn get_receipt_proof_target_shard_prefix(
     res
 }
 
-pub fn get_endorsements_key_prefix(chunk_production_key: &ChunkProductionKey) -> Vec<u8> {
-    chunk_production_key.to_le_bytes().into()
+pub fn get_endorsements_key_prefix(
+    block_hash: &CryptoHash,
+    chunk_production_key: &ChunkProductionKey,
+) -> Vec<u8> {
+    let length: usize = size_of::<CryptoHash>() + size_of::<ChunkProductionKey>();
+    let mut res = Vec::with_capacity(length);
+    res.extend_from_slice(block_hash.as_ref());
+    res.extend_from_slice(&chunk_production_key.to_le_bytes());
+    res
 }
 
 pub fn get_endorsements_key(
+    block_hash: &CryptoHash,
     chunk_production_key: &ChunkProductionKey,
     account_id: &AccountId,
 ) -> Vec<u8> {
     let account_id = account_id.as_bytes();
-    let length: usize = size_of::<ChunkProductionKey>() + account_id.len();
+    let length: usize =
+        size_of::<CryptoHash>() + size_of::<ChunkProductionKey>() + account_id.len();
     let mut res = Vec::with_capacity(length);
+    res.extend_from_slice(block_hash.as_ref());
     res.extend_from_slice(&chunk_production_key.to_le_bytes());
     res.extend_from_slice(account_id);
     res
 }
 
-pub fn get_execution_results_key(chunk_production_key: &ChunkProductionKey) -> Vec<u8> {
-    chunk_production_key.to_le_bytes().into()
+pub fn get_execution_results_key(
+    block_hash: &CryptoHash,
+    chunk_production_key: &ChunkProductionKey,
+) -> Vec<u8> {
+    let length: usize = size_of::<CryptoHash>() + size_of::<ChunkProductionKey>();
+    let mut res = Vec::with_capacity(length);
+    res.extend_from_slice(block_hash.as_ref());
+    res.extend_from_slice(&chunk_production_key.to_le_bytes());
+    res
 }
 
 pub fn get_block_shard_id_rev(
