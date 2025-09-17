@@ -113,8 +113,23 @@ pub fn spice_pre_validate_chunk_state_witness(
         // - we would want to use that.
         // It would stop working for genesis though; it's not always there and available.
 
-        let spice_chunk_header = if !block.is_spice_block() {
-            // FIXME: remove
+        let spice_chunk_header = if !prev_block.is_spice_block() {
+            // FIXME: This doesn't work, since it's prev_block
+            // that is non-spice, but it would not contain relevant information.
+            // We basically need a single block that is executed as spice and as non-spice both.
+            // How to achieve this??
+            // -- we should execute prev_block and block without spice
+            //    - then block would contain enough information for validation of block
+            //    (relevant chunk extras)
+            // -- in forknet would that mean running prev_block through executor again?
+            // then here is_spice_block would trigger.
+            //   (on next one prev_block_header.is_genesis() would trigger, but we have
+            //   special-handle that as well by checking if prev_block is spice block)
+            //
+            // -- block header contains execution results for prev_block
+            //
+            //
+            // --
             tracing::error!(
                 target: "fixme",
                 prev_block_hash=?prev_block_header.hash(),
