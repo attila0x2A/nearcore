@@ -30,7 +30,7 @@ fn test_spice_chain() {
         (0..100).map(|i| format!("account{}", i).parse().unwrap()).collect_vec();
 
     let num_block_producers = 4;
-    let num_validators = 5;
+    let num_validators = 0;
 
     let block_and_chunk_producers =
         accounts.iter().take(num_block_producers).cloned().collect_vec();
@@ -44,8 +44,9 @@ fn test_spice_chain() {
     // With each block producer tracking more than one shard we are more likely to find bugs of
     // chunks being processed inconsistently.
     // More than one shard in total allows testing cross-shard communications.
-    let shard_layout =
-        ShardLayout::multi_shard_custom(vec![accounts[accounts.len() / 2].clone()], 1);
+    let shard_layout = ShardLayout::multi_shard(9, 3);
+    // let shard_layout =
+    //     ShardLayout::multi_shard_custom(vec![accounts[accounts.len() / 2].clone()], 1);
     let validators_spec = ValidatorsSpec::desired_roles(
         &block_and_chunk_producers.iter().map(|a| a.as_str()).collect_vec(),
         &validators_only.iter().map(|a| a.as_str()).collect_vec(),

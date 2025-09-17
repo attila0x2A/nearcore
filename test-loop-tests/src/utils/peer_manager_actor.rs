@@ -713,7 +713,8 @@ fn network_message_to_spice_data_distributor_handler(
                     .spice_data_distributor_actor
                     .send(SpiceIncomingPartialData {
                         data: partial_data.clone(),
-                        sender: my_account_id.clone(),
+                        sender: PeerId::random(),
+                        // sender: my_account_id.clone(),
                     });
             }
             None
