@@ -110,6 +110,13 @@ pub fn spice_pre_validate_chunk_state_witness(
     let main_transition_params = {
         // For correct application we need to convert chunk_header into spice_chunk_header.
         let spice_chunk_header = if prev_block_header.is_genesis() {
+            // FIXME: remove
+            tracing::error!(
+                target: "fixme",
+                prev_block_hash=?prev_block_header.hash(),
+                block_hash=?block.hash(),
+                "prev block is genesis on witness validation"
+            );
             let prev_block_epoch_id = prev_block_header.epoch_id();
             let prev_block_shard_layout = epoch_manager.get_shard_layout(&prev_block_epoch_id)?;
             let chunk_extra = Chain::build_genesis_chunk_extra(
@@ -125,6 +132,7 @@ pub fn spice_pre_validate_chunk_state_witness(
                 .0
                 .get(prev_chunk_header.chunk_hash())
                 .expect("execution results for all prev_block chunks should be available");
+            // FIXME: assert that chunk_header is spice chunk header.
             chunk_header.into_spice_chunk_execution_header(&prev_execution_result.chunk_extra)
         };
 

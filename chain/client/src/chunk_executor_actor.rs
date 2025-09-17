@@ -287,6 +287,15 @@ impl ChunkExecutorActor {
             tracing::error!(target: "chunk_executor", ?err, ?block_hash, "failure when processing pending unverified receipts");
             return Err(err);
         }
+        // FIXME: remove
+        if prev_block.header().is_genesis() {
+            tracing::error!(
+                target: "fixme",
+                prev_block_hash=?prev_block.header().hash(),
+                block_hash=?block.hash(),
+                "prev block is genesis on chunk application"
+            );
+        }
 
         let mut all_receipts: HashMap<ShardId, Vec<ReceiptProof>> = HashMap::new();
         let prev_block_epoch_id = self.epoch_manager.get_epoch_id(prev_block_hash)?;
@@ -677,6 +686,20 @@ impl ChunkExecutorActor {
             let receipts = collect_receipts(incoming_receipts);
 
             let shard_uid = &shard_context.shard_uid;
+            // FIXME: Assert that chunk_extra is the same an in prev_block execution results.
+            // FIXME: This is likely
+            // -- THE ISSUE: we have chunk extra from before running spice
+            //    which is different from chunk extra when running spice for some reason
+            //    (not
+            //    exactly sure which reason; maybe witnesses are different which makes execution
+            //    results different).
+            //
+            //    We cannot use chunk extra from execution results if it's incorrect.
+            //
+            // FIXME: Can it be different because chunk for previous block
+            // is different; i.e. we have in that chunk chunk_extra which is ignored when
+            // validating witness (assuming we treat some block as genesis; and use genesis chunk
+            // extra for witness validation).
             let chunk_extra = self.chain_store.get_chunk_extra(prev_block_hash, shard_uid)?;
             let chunk_header = chunk_header.clone().into_spice_chunk_execution_header(&chunk_extra);
 
