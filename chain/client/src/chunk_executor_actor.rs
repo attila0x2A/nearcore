@@ -533,6 +533,20 @@ impl ChunkExecutorActor {
         let chunk_header = chunks.get(shard_index).unwrap();
         debug_assert_eq!(chunk_header.shard_id(), shard_id);
 
+        // FIXME:
+        {
+            let chunk_execution_result =
+                new_execution_result(gas_limit, apply_result, outgoing_receipts_root);
+            tracing::info!(
+                target: "fixme",
+                block_hash=?block.hash(),
+                ?shard_id,
+                ?chunk_header,
+                ?chunk_execution_result,
+                "producer chunk execution result",
+            );
+        }
+
         if self
             .epoch_manager
             .get_chunk_validator_assignments(&epoch_id, shard_id, block.header().height())?
@@ -706,10 +720,18 @@ impl ChunkExecutorActor {
                 self.core_processor.get_execution_results_by_shard_id(prev_block)?;
             let chunk_extra = self.chain_store.get_chunk_extra(prev_block_hash, shard_uid)?;
             if !prev_block_execution_results.is_empty() {
-                assert_eq!(
-                    &prev_block_execution_results[&shard_id].chunk_extra,
-                    chunk_extra.as_ref()
-                );
+                if &prev_block_execution_results[&shard_id].chunk_extra != chunk_extra.as_ref() {
+                    tracing::error!(
+                        target: "fixme",
+                        ?shard_id,
+                        ?shard_uid,
+                        ?prev_block_execution_results,
+                        ?chunk_header,
+                        ?block,
+                        "debug info"
+                    );
+                    assert!(false);
+                }
             }
             let chunk_header = chunk_header.clone().into_spice_chunk_execution_header(&chunk_extra);
 

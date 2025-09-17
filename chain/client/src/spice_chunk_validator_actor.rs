@@ -326,6 +326,16 @@ impl SpiceChunkValidatorActor {
                 }
             };
 
+            // FIXME
+            tracing::info!(
+                target: "fixme",
+                ?block_hash,
+                ?shard_id,
+                ?chunk_header,
+                ?chunk_execution_result,
+                "validator chunk execution result",
+            );
+
             let endorsement = ChunkEndorsement::new_with_execution_result(
                 epoch_id,
                 chunk_execution_result,
