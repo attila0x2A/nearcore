@@ -109,7 +109,20 @@ pub fn spice_pre_validate_chunk_state_witness(
 
     let main_transition_params = {
         // For correct application we need to convert chunk_header into spice_chunk_header.
-        let spice_chunk_header = if prev_block_header.is_genesis() {
+        // FIXME: Instead od this check if prev_block_header chunk extra exists
+        // - we would want to use that.
+        // It would stop working for genesis though; it's not always there and available.
+
+        let spice_chunk_header = if !block.is_spice_block() {
+            // FIXME: remove
+            tracing::error!(
+                target: "fixme",
+                prev_block_hash=?prev_block_header.hash(),
+                block_hash=?block.hash(),
+                "non-spice block - using chunk header as is"
+            );
+            chunk_header
+        } else if prev_block_header.is_genesis() {
             // FIXME: remove
             tracing::error!(
                 target: "fixme",

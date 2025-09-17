@@ -300,6 +300,7 @@ impl ChunkExecutorActor {
         let mut all_receipts: HashMap<ShardId, Vec<ReceiptProof>> = HashMap::new();
         let prev_block_epoch_id = self.epoch_manager.get_epoch_id(prev_block_hash)?;
         let prev_block_shard_ids = self.epoch_manager.shard_ids(&prev_block_epoch_id)?;
+
         for &prev_block_shard_id in &prev_block_shard_ids {
             // TODO(spice-resharding): convert `prev_block_shard_id` into `shard_id` for
             // the current shard layout
@@ -321,6 +322,7 @@ impl ChunkExecutorActor {
                 }
 
                 if !self.chunk_extra_exists(prev_block_hash, prev_block_shard_id)? {
+                    // FIXME: Assert here that chunk extra is the same as execution results.
                     tracing::debug!(
                         target: "chunk_executor",
                         %block_hash,
@@ -700,7 +702,15 @@ impl ChunkExecutorActor {
             // is different; i.e. we have in that chunk chunk_extra which is ignored when
             // validating witness (assuming we treat some block as genesis; and use genesis chunk
             // extra for witness validation).
+            let prev_block_execution_results =
+                self.core_processor.get_execution_results_by_shard_id(prev_block)?;
             let chunk_extra = self.chain_store.get_chunk_extra(prev_block_hash, shard_uid)?;
+            if !prev_block_execution_results.is_empty() {
+                assert_eq!(
+                    &prev_block_execution_results[&shard_id].chunk_extra,
+                    chunk_extra.as_ref()
+                );
+            }
             let chunk_header = chunk_header.clone().into_spice_chunk_execution_header(&chunk_extra);
 
             let transactions =
