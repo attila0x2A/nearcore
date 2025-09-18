@@ -193,7 +193,7 @@ impl Handler<ExecutorIncomingUnverifiedReceipts> for ChunkExecutorActor {
     fn handle(&mut self, receipts: ExecutorIncomingUnverifiedReceipts) {
         let block_hash = receipts.block_hash;
         let from_shard_id = receipts.receipt_proof.1.from_shard_id;
-        let to_shard_id = receipts.receipt_proof.1.from_shard_id;
+        let to_shard_id = receipts.receipt_proof.1.to_shard_id;
 
         tracing::debug!(target: "chunk_executor", %block_hash, ?from_shard_id, ?to_shard_id, "received receipts");
         self.pending_unverified_receipts.entry(block_hash).or_default().push(receipts);

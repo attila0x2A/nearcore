@@ -96,6 +96,10 @@ impl CoreStatementsTracker {
 
     fn all_execution_results_exist(&self, block: &Block) -> Result<bool, std::io::Error> {
         for chunk in block.chunks().iter_raw() {
+            if chunk.height_included() != chunk.height_created() {
+                // old
+                continue;
+            }
             let key = make_chunk_production_key(block, chunk);
             if self.get_execution_result(block.hash(), &key)?.is_none() {
                 return Ok(false);
@@ -453,6 +457,10 @@ impl CoreStatementsProcessor {
         let tracker = self.read();
         let mut results = HashMap::new();
         for chunk in block.chunks().iter_raw() {
+            if chunk.height_included() != chunk.height_created() {
+                // old
+                continue;
+            }
             let key = make_chunk_production_key(block, chunk);
             let Some(result) = tracker.get_execution_result(block.hash(), &key)? else {
                 return Ok(None);

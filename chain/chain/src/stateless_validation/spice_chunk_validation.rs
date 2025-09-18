@@ -113,7 +113,8 @@ pub fn spice_pre_validate_chunk_state_witness(
         // - we would want to use that.
         // It would stop working for genesis though; it's not always there and available.
 
-        let spice_chunk_header = if !prev_block.is_spice_block() {
+        let spice_chunk_header = if chunk_header.height_included() != chunk_header.height_created()
+        {
             // FIXME: This doesn't work, since it's prev_block
             // that is non-spice, but it would not contain relevant information.
             // We basically need a single block that is executed as spice and as non-spice both.
@@ -134,7 +135,7 @@ pub fn spice_pre_validate_chunk_state_witness(
                 target: "fixme",
                 prev_block_hash=?prev_block_header.hash(),
                 block_hash=?block.hash(),
-                "non-spice block - using chunk header as is"
+                "non-spice chunk header - using chunk header as is"
             );
             chunk_header
         } else if prev_block_header.is_genesis() {
@@ -223,6 +224,10 @@ fn validate_source_receipts_proofs(
     let mut receipt_proofs = Vec::new();
     for chunk in prev_block.chunks().iter_raw() {
         let chunk_hash = chunk.chunk_hash();
+        // FIXME
+        if prev_execution_results.0.get(chunk_hash).is_none() {
+            continue;
+        }
         let prev_execution_result = prev_execution_results
             .0
             .get(chunk_hash)
