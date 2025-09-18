@@ -222,8 +222,15 @@ impl SpiceChunkValidatorActor {
                     ),
                     outgoing_receipts_root: *chunk.prev_outgoing_receipts_root(),
                 };
-                results.insert(chunk.chunk_hash().clone(), result.into());
+                let prev_chunk =
+                    self.epoch_manager.get_prev_chunk_header(&prev_block, chunk.shard_id())?;
+                results.insert(prev_chunk.chunk_hash().clone(), result.into());
             }
+            tracing::debug!(
+                target: "spice_chunk_validator",
+                ?block_hash,
+                "using prev_block_execution_results generated from chunk hash",
+            );
             return Ok(WitnessProcessingReadiness::Ready(WitnessValidationContext {
                 block,
                 prev_block,

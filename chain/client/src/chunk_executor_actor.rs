@@ -758,7 +758,9 @@ impl ChunkExecutorActor {
             let prev_block_execution_results =
                 self.core_processor.get_execution_results_by_shard_id(prev_block)?;
             let chunk_extra = self.chain_store.get_chunk_extra(prev_block_hash, shard_uid)?;
-            if !prev_block_execution_results.is_empty() {
+            if !prev_block_execution_results.is_empty()
+                && prev_block_execution_results.contains_key(&shard_id)
+            {
                 if &prev_block_execution_results[&shard_id].chunk_extra != chunk_extra.as_ref() {
                     tracing::error!(
                         target: "fixme",
