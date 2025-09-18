@@ -428,7 +428,7 @@ impl SpiceDataDistributorActor {
             witness_validator_sender,
             pending_partial_data: LruCache::new(PENDING_PARTIAL_DATA_CAP),
             pending_retries: HashSet::new(),
-            distributing_data: LruCache::new(NonZeroUsize::new(100).unwrap()),
+            distributing_data: LruCache::new(NonZeroUsize::new(2000).unwrap()),
         }
     }
 
