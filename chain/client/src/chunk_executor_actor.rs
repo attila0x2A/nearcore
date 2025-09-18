@@ -341,22 +341,21 @@ impl ChunkExecutorActor {
                 {
                     let present_shard_ids: HashSet<_> =
                         proofs.iter().map(|proof| proof.1.from_shard_id).collect();
-                    let chunks = prev_block.chunks();
+                    let prev_block_chunks = prev_block.chunks();
                     let mut inserted = 0;
-                    for chunk in chunks.iter() {
+                    for chunk in prev_block_chunks.iter_raw() {
                         // if it's an old chunk it means we should have applied it's receipts
                         // before.
-                        let old_chunk = match chunk {
-                            ChunkType::New(_) => continue,
-                            ChunkType::Old(header) => header,
+                        if chunk.height_included() == prev_block.header().height() {
+                            continue;
                         };
-                        if present_shard_ids.contains(&old_chunk.shard_id()) {
+                        if present_shard_ids.contains(&chunk.shard_id()) {
                             continue;
                         }
                         proofs.push(ReceiptProof(
                             vec![],
                             ShardProof {
-                                from_shard_id: old_chunk.shard_id(),
+                                from_shard_id: chunk.shard_id(),
                                 to_shard_id: prev_block_shard_id,
                                 proof: vec![],
                             },
