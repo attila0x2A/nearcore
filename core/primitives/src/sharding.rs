@@ -348,6 +348,19 @@ pub enum ShardChunkHeader {
 }
 
 impl ShardChunkHeader {
+    pub fn is_spice(&self) -> bool {
+        match self {
+            ShardChunkHeader::V1(_) | ShardChunkHeader::V2(_) => false,
+            ShardChunkHeader::V3(v3) => match v3.inner {
+                ShardChunkHeaderInner::V1(_)
+                | ShardChunkHeaderInner::V2(_)
+                | ShardChunkHeaderInner::V3(_)
+                | ShardChunkHeaderInner::V4(_) => false,
+                ShardChunkHeaderInner::V5(_) => true,
+            },
+        }
+    }
+
     pub fn new_dummy(height: BlockHeight, shard_id: ShardId, prev_block_hash: CryptoHash) -> Self {
         Self::V3(ShardChunkHeaderV3::new_dummy(height, shard_id, prev_block_hash))
     }

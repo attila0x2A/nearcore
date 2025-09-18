@@ -113,8 +113,7 @@ pub fn spice_pre_validate_chunk_state_witness(
         // - we would want to use that.
         // It would stop working for genesis though; it's not always there and available.
 
-        let spice_chunk_header = if chunk_header.height_included() != chunk_header.height_created()
-        {
+        let spice_chunk_header = if !chunk_header.is_spice() {
             // FIXME: This doesn't work, since it's prev_block
             // that is non-spice, but it would not contain relevant information.
             // We basically need a single block that is executed as spice and as non-spice both.

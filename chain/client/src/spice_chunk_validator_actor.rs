@@ -22,7 +22,8 @@ use near_primitives::stateless_validation::chunk_endorsement::ChunkEndorsement;
 use near_primitives::stateless_validation::state_witness::{
     ChunkStateWitness, ChunkStateWitnessSize,
 };
-use near_primitives::types::BlockExecutionResults;
+use near_primitives::types::chunk_extra::ChunkExtra;
+use near_primitives::types::{BlockExecutionResults, ChunkExecutionResult};
 use near_primitives::validator_signer::ValidatorSigner;
 use near_primitives::version::PROTOCOL_VERSION;
 use near_store::Store;
@@ -204,6 +205,31 @@ impl SpiceChunkValidatorActor {
             Err(err) => return Err(err),
         };
         let prev_block = self.chain_store.get_block(block.header().prev_hash())?;
+
+        if block.chunks().iter_raw().all(|chunk| !chunk.is_spice()) {
+            let mut results = HashMap::new();
+            for chunk in block.chunks().iter_raw() {
+                let result = ChunkExecutionResult {
+                    chunk_extra: ChunkExtra::new(
+                        &chunk.prev_state_root(),
+                        *chunk.prev_outcome_root(),
+                        chunk.prev_validator_proposals().collect(),
+                        chunk.prev_gas_used(),
+                        chunk.gas_limit(),
+                        chunk.prev_balance_burnt(),
+                        Some(chunk.congestion_info()),
+                        chunk.bandwidth_requests().cloned().unwrap(),
+                    ),
+                    outgoing_receipts_root: *chunk.prev_outgoing_receipts_root(),
+                };
+                results.insert(chunk.chunk_hash().clone(), result.into());
+            }
+            return Ok(WitnessProcessingReadiness::Ready(WitnessValidationContext {
+                block,
+                prev_block,
+                prev_block_execution_results: BlockExecutionResults(results),
+            }));
+        }
 
         let Some(prev_block_execution_results) =
             self.core_processor.get_block_execution_results(&prev_block)?
