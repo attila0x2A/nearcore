@@ -882,7 +882,6 @@ impl ChunkExecutorActor {
                 .get_execution_results_by_shard_id(&block)?
                 .into_keys()
                 .collect_vec();
-            tracing::debug!(target: "chunk_executor", ?block_hash, ?present_shards, "not ready for receipt validation; missing execution results");
             // FIXME:
             // if missing are old chunks - ignore those
             for chunk in block.chunks().iter_raw() {
@@ -894,6 +893,7 @@ impl ChunkExecutorActor {
                 if present_shards.contains(&chunk.shard_id()) {
                     continue;
                 }
+                tracing::debug!(target: "chunk_executor", ?block_hash, ?present_shards, "not ready for receipt validation; missing execution results");
                 return Ok(ReceiptVerificationContext::NotReady);
             }
         }
