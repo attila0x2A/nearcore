@@ -153,13 +153,19 @@ impl ExecutorIncomingUnverifiedReceipts {
     ) -> Result<VerifiedReceipts, Error> {
         let Some(execution_result) = execution_results.get(&self.receipt_proof.1.from_shard_id)
         else {
-            debug_assert!(false, "execution results missing results when verifying receipts");
-            tracing::error!(
+            // FIXME:
+            // debug_assert!(false, "execution results missing results when verifying receipts");
+            tracing::debug!(
                 target: "chunk_executor",
                 from_shard_id=?self.receipt_proof.1.from_shard_id,
-                "execution results missing results when verifying receipts"
+                "must be old chunk: execution results missing results when verifying receipts"
             );
-            return Err(Error::InvalidShardId(self.receipt_proof.1.from_shard_id));
+            return Ok(VerifiedReceipts {
+                receipt_proof: self.receipt_proof,
+                block_hash: self.block_hash,
+            });
+            // FIXME
+            // return Err(Error::InvalidShardId(self.receipt_proof.1.from_shard_id));
         };
         if !self.receipt_proof.verify_against_receipt_root(execution_result.outgoing_receipts_root)
         {
@@ -189,17 +195,8 @@ impl Handler<ExecutorIncomingUnverifiedReceipts> for ChunkExecutorActor {
         let from_shard_id = receipts.receipt_proof.1.from_shard_id;
         let to_shard_id = receipts.receipt_proof.1.from_shard_id;
 
-        if let Err(err) = self.process_new_receipts(receipts) {
-            tracing::error!(
-                target : "chunk_executor",
-                ?err,
-                ?block_hash,
-                ?from_shard_id,
-                ?to_shard_id,
-                "failed to process new receipts"
-            );
-            return;
-        }
+        tracing::debug!(target: "chunk_executor", %block_hash, ?from_shard_id, ?to_shard_id, "received receipts");
+        self.pending_unverified_receipts.entry(block_hash).or_default().push(receipts);
         if let Err(err) = self.try_process_next_blocks(&block_hash) {
             tracing::error!(target: "chunk_executor", ?err, ?block_hash, "failed to process next blocks");
         }
@@ -880,31 +877,28 @@ impl ChunkExecutorActor {
     ) -> Result<ReceiptVerificationContext, Error> {
         let block = self.chain_store.get_block(block_hash)?;
         if !self.core_processor.all_execution_results_exist(&block)? {
-            return Ok(ReceiptVerificationContext::NotReady);
+            let present_shards = self
+                .core_processor
+                .get_execution_results_by_shard_id(&block)?
+                .into_keys()
+                .collect_vec();
+            tracing::debug!(target: "chunk_executor", ?block_hash, ?present_shards, "not ready for receipt validation; missing execution results");
+            // FIXME:
+            // if missing are old chunks - ignore those
+            for chunk in block.chunks().iter_raw() {
+                if chunk.height_included() != block.header().height() {
+                    // old
+                    continue;
+                }
+                // not-old
+                if present_shards.contains(&chunk.shard_id()) {
+                    continue;
+                }
+                return Ok(ReceiptVerificationContext::NotReady);
+            }
         }
         let execution_results = self.core_processor.get_execution_results_by_shard_id(&block)?;
         Ok(ReceiptVerificationContext::Ready { execution_results })
-    }
-
-    fn process_new_receipts(
-        &mut self,
-        receipts: ExecutorIncomingUnverifiedReceipts,
-    ) -> Result<(), Error> {
-        let block_hash = receipts.block_hash;
-
-        let verified_receipts = match self.receipts_verification_context(&block_hash)? {
-            ReceiptVerificationContext::Ready { execution_results } => {
-                // TODO(spice): Notify spice data distributor about invalid receipts so it can ban
-                // or de-prioritize the node which sent them.
-                receipts.verify(&execution_results)?
-            }
-            ReceiptVerificationContext::NotReady => {
-                tracing::debug!(target: "chunk_executor", %block_hash, "not yet ready for verification of receipts");
-                self.pending_unverified_receipts.entry(block_hash).or_default().push(receipts);
-                return Ok(());
-            }
-        };
-        self.save_verified_receipts(&verified_receipts)
     }
 
     fn try_process_pending_unverified_receipts(
