@@ -2,6 +2,7 @@ use std::collections::HashMap;
 use std::collections::HashSet;
 use std::sync::Arc;
 
+use itertools::Itertools as _;
 use near_async::futures::AsyncComputationSpawner;
 use near_async::futures::AsyncComputationSpawnerExt;
 use near_async::messaging::CanSend;
@@ -341,6 +342,7 @@ impl ChunkExecutorActor {
                     let present_shard_ids: HashSet<_> =
                         proofs.iter().map(|proof| proof.1.from_shard_id).collect();
                     let chunks = prev_block.chunks();
+                    let mut inserted = 0;
                     for chunk in chunks.iter() {
                         // if it's an old chunk it means we should have applied it's receipts
                         // before.
@@ -359,7 +361,20 @@ impl ChunkExecutorActor {
                                 proof: vec![],
                             },
                         ));
+                        inserted += 1;
                     }
+                    let block_is_spice = block.is_spice_block();
+                    let prev_block_is_spice = prev_block.is_spice_block();
+                    tracing::debug!(target: "chunk_executor",
+                        ?block_hash,
+                        ?prev_block_hash,
+                        ?prev_block_shard_id,
+                        ?block_is_spice,
+                        ?prev_block_is_spice,
+                        proofs_from_to=?proofs.iter().map(|proof| (proof.1.from_shard_id, proof.1.to_shard_id)).collect_vec(),
+                        ?inserted,
+                        "inserted old chunks receipts");
+                    proofs.sort_by_key(|proof| proof.1.from_shard_id);
                 }
                 if proofs.len() != prev_block_shard_ids.len() {
                     // FIXME: Include which shards are missing
