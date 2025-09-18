@@ -29,6 +29,7 @@ use near_chain_primitives::ApplyChunksMode;
 use near_epoch_manager::EpochManagerAdapter;
 use near_epoch_manager::shard_assignment::shard_id_to_uid;
 use near_epoch_manager::shard_tracker::ShardTracker;
+use near_network::spice_data_distribution::SpiceDataIdentifier;
 use near_network::types::PeerManagerAdapter;
 use near_primitives::block::ChunkType;
 use near_primitives::block::Chunks;
@@ -65,6 +66,7 @@ use crate::spice_chunk_validator_actor::send_spice_chunk_endorsement;
 use crate::spice_data_distributor_actor::SpiceDataDistributorAdapter;
 use crate::spice_data_distributor_actor::SpiceDistributorOutgoingReceipts;
 use crate::spice_data_distributor_actor::SpiceDistributorStateWitness;
+use crate::spice_data_distributor_actor::SpiceStartRequestingData;
 use crate::stateless_validation::chunk_endorsement::ChunkEndorsementTracker;
 
 pub struct ChunkExecutorActor {
@@ -214,6 +216,13 @@ impl Handler<ExecutorIncomingUnverifiedReceipts> for ChunkExecutorActor {
 // need to collect receipts in a different way.
 impl Handler<ProcessedBlock> for ChunkExecutorActor {
     fn handle(&mut self, ProcessedBlock { block_hash }: ProcessedBlock) {
+        let block = self.chain_store.get_block(&block_hash).unwrap();
+        for chunk in block.chunks().iter_raw() {
+            self.data_distributor_adapter.send(SpiceStartRequestingData {
+                data_id: SpiceDataIdentifier::Witness { block_hash, shard_id: chunk.shard_id() },
+            });
+        }
+
         match self.try_apply_chunks(&block_hash) {
             Ok(TryApplyChunksOutcome::Scheduled) => {}
             Ok(TryApplyChunksOutcome::NotReady) => {
@@ -381,6 +390,17 @@ impl ChunkExecutorActor {
                         %prev_block_shard_id,
                         "missing receipts to apply all tracked chunks for a block"
                     );
+
+                    for from_shard_id in prev_block_shard_ids {
+                        self.data_distributor_adapter.send(SpiceStartRequestingData {
+                            data_id: SpiceDataIdentifier::ReceiptProof {
+                                block_hash: *prev_block_hash,
+                                from_shard_id,
+                                to_shard_id: prev_block_shard_id,
+                            },
+                        });
+                    }
+
                     return Ok(TryApplyChunksOutcome::NotReady);
                 }
                 all_receipts.insert(prev_block_shard_id, proofs);
@@ -519,7 +539,7 @@ impl ChunkExecutorActor {
         {
             let head = self.chain_store.head()?;
             let final_head = self.chain_store.final_head()?;
-            tracing::info!(target: "chunk_executor", %block_hash, block_height=?block.header().height(), head_height=?head.height, final_head_height=?final_head.height, "finished applying block");
+            tracing::warn!(target: "chunk_executor", %block_hash, block_height=?block.header().height(), head_height=?head.height, final_head_height=?final_head.height, "finished applying block");
         }
         let epoch_id = self.epoch_manager.get_epoch_id(&block_hash)?;
         let shard_layout = self.epoch_manager.get_shard_layout(&epoch_id)?;

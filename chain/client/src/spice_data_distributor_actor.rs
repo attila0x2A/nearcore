@@ -8,6 +8,8 @@ use borsh::BorshSerialize;
 use lru::LruCache;
 use near_async::MultiSend;
 use near_async::MultiSenderFrom;
+use near_async::futures::DelayedActionRunner;
+use near_async::futures::DelayedActionRunnerExt;
 use near_async::messaging::CanSend;
 use near_async::messaging::Handler;
 use near_async::messaging::Sender;
@@ -17,6 +19,7 @@ use near_chain::spice_core::CoreStatementsProcessor;
 use near_chain_configs::MutableValidatorSigner;
 use near_crypto::PublicKey;
 use near_epoch_manager::EpochManagerAdapter;
+use near_network::spice_data_distribution::RequestSpiceData;
 use near_network::spice_data_distribution::SpiceDataCommitment;
 use near_network::spice_data_distribution::SpiceDataIdentifier;
 use near_network::spice_data_distribution::SpiceDataPart;
@@ -41,6 +44,7 @@ use near_primitives::types::AccountId;
 use near_primitives::types::EpochId;
 use near_store::adapter::StoreAdapter;
 use near_store::adapter::chain_store::ChainStoreAdapter;
+use time::Duration;
 
 use crate::chunk_executor_actor::ExecutorIncomingUnverifiedReceipts;
 use crate::chunk_executor_actor::ProcessedBlock;
@@ -142,14 +146,143 @@ pub struct SpiceDataDistributorActor {
     /// SpicePartialData which we cannot decode or validate yet because of missing corresponding block.
     /// Key is block hash, value is data with sender
     pending_partial_data: LruCache<CryptoHash, Vec<(SpicePartialData, AccountId)>>,
+
+    pending_retries: HashSet<SpiceDataIdentifier>,
+    distributing_data: LruCache<SpiceDataIdentifier, SpiceData>,
 }
 
-impl near_async::messaging::Actor for SpiceDataDistributorActor {}
+impl near_async::messaging::Actor for SpiceDataDistributorActor {
+    fn start_actor(&mut self, ctx: &mut dyn DelayedActionRunner<Self>) {
+        self.schedule_retries(ctx);
+    }
+}
+
+impl SpiceDataDistributorActor {
+    fn schedule_retries(&mut self, ctx: &mut dyn DelayedActionRunner<Self>) {
+        self.run_retries();
+
+        ctx.run_later(
+            "SpiceDataDistributorActor request retries",
+            Duration::milliseconds(100),
+            move |act, ctx| {
+                act.schedule_retries(ctx);
+            },
+        );
+    }
+
+    fn run_retries(&mut self) {
+        let Some(signer) = self.validator_signer.get() else {
+            tracing::debug!(target: "spice_data_distribution", "no validator signer to retry requests");
+            return;
+        };
+        let me = signer.validator_id();
+        for id in &self.pending_retries {
+            let block_hash = id.block_hash();
+            let block = match self.chain_store.get_block(block_hash) {
+                Ok(block) => block,
+                Err(err) => {
+                    tracing::debug!(target: "spice_data_distribution", ?err, ?block_hash, "failed getting a block to retry data request");
+                    continue;
+                }
+            };
+            let (_recipients, producers) = match self.recipients_and_producers(&id, &block) {
+                Ok((r, p)) => (r, p),
+                Err(err) => {
+                    tracing::error!(target: "spice_data_distribution", ?err, ?block_hash, "failed to get recipients and producers to retry data request");
+                    continue;
+                }
+            };
+
+            if producers.contains(me) {
+                continue;
+            }
+
+            // FIXME: Request only missing parts.
+            self.network_adapter.send(PeerManagerMessageRequest::NetworkRequests(
+                NetworkRequests::RequestSpiceData {
+                    data_id: id.clone(),
+                    producers: HashSet::from_iter(producers.into_iter()),
+                    requester: me.clone(),
+                },
+            ));
+        }
+    }
+
+    fn send_data(
+        &mut self,
+        data_id: &SpiceDataIdentifier,
+        requester: &AccountId,
+    ) -> Result<(), Error> {
+        // FIXME: Add more asserts
+        let Some(signer) = self.validator_signer.get() else {
+            debug_assert!(false);
+            return Err(Error::Other("trying to send data without validator_signer"));
+        };
+        let me = signer.validator_id();
+
+        if me == requester {
+            return Ok(());
+        }
+
+        let block = self.chain_store.get_block(data_id.block_hash())?;
+        let (recipients, producers) = self.recipients_and_producers(&data_id, &block)?;
+        if !producers.contains(me) {
+            return Ok(());
+        }
+        if !recipients.contains(requester) {
+            return Ok(());
+        }
+
+        let Some(data) = self.distributing_data.get(data_id) else {
+            // tracing::error!(target: "spice_data_distribution", ?data_id, ?requester, "requested unknown data");
+            return Ok(());
+        };
+
+        let split_count = 1;
+
+        let encoder = self.rs_encoders.entry(split_count);
+        let (boxed_parts, encoded_length) = encoder.encode(data);
+        debug_assert_eq!(boxed_parts.len(), split_count);
+
+        let parts: Vec<&[u8]> =
+            boxed_parts.iter().map(|x| x.as_deref().unwrap()).collect::<Vec<_>>();
+        let (merkle_root, merkle_proofs) = merklize(&parts);
+        // TODO(spice): As an optimization we should be able to avoid serializing data both in
+        // encode and to compute hash.
+        let data_hash = hash(&borsh::to_vec(&data).unwrap());
+        let commitment = SpiceDataCommitment {
+            hash: data_hash,
+            root: merkle_root,
+            encoded_length: encoded_length as u64,
+        };
+
+        let recipients = HashSet::from([requester.clone()]);
+        for (i, (part, proof)) in boxed_parts.into_iter().zip(merkle_proofs.into_iter()).enumerate()
+        {
+            let part = part.unwrap();
+            let partial_data = SpicePartialData {
+                id: data_id.clone(),
+                commitment: commitment.clone(),
+                parts: vec![SpiceDataPart { part_ord: i as u64, part, merkle_proof: proof }],
+                sender: me.clone(),
+            };
+            self.network_adapter.send(PeerManagerMessageRequest::NetworkRequests(
+                NetworkRequests::SpicePartialData {
+                    partial_data: partial_data.clone(),
+                    recipients: recipients.clone(),
+                },
+            ));
+        }
+
+        Ok(())
+    }
+}
 
 #[derive(Clone, MultiSend, MultiSenderFrom)]
 pub struct SpiceDataDistributorAdapter {
     pub receipts: Sender<SpiceDistributorOutgoingReceipts>,
     pub witness: Sender<SpiceDistributorStateWitness>,
+    pub requester: Sender<SpiceStartRequestingData>,
 }
 
 struct DataPartsEntry {
@@ -157,7 +290,7 @@ struct DataPartsEntry {
     tracker: ReedSolomonPartsTracker<SpiceData>,
 }
 
-#[derive(Debug, BorshSerialize, BorshDeserialize)]
+#[derive(Debug, Clone, BorshSerialize, BorshDeserialize)]
 enum SpiceData {
     ReceiptProof(ReceiptProof),
     StateWitness(Box<ChunkStateWitness>),
@@ -178,6 +311,18 @@ pub struct SpiceDistributorOutgoingReceipts {
 #[rtype(result = "()")]
 pub struct SpiceDistributorStateWitness {
     pub state_witness: ChunkStateWitness,
+}
+
+#[derive(actix::Message, Debug)]
+#[rtype(result = "()")]
+pub struct SpiceStartRequestingData {
+    pub data_id: SpiceDataIdentifier,
+}
+
+impl Handler<SpiceStartRequestingData> for SpiceDataDistributorActor {
+    fn handle(&mut self, SpiceStartRequestingData { data_id }: SpiceStartRequestingData) -> () {
+        self.pending_retries.insert(data_id);
+    }
 }
 
 impl Handler<SpiceDistributorOutgoingReceipts> for SpiceDataDistributorActor {
@@ -249,6 +394,14 @@ impl Handler<ProcessedBlock> for SpiceDataDistributorActor {
     }
 }
 
+impl Handler<RequestSpiceData> for SpiceDataDistributorActor {
+    fn handle(&mut self, RequestSpiceData { data_id, requester }: RequestSpiceData) -> () {
+        if let Err(err) = self.send_data(&data_id, &requester) {
+            tracing::error!(target: "spice_data_distribution", ?err, ?data_id, ?requester, "failed to send data");
+        }
+    }
+}
+
 impl SpiceDataDistributorActor {
     pub fn new(
         epoch_manager: Arc<dyn EpochManagerAdapter>,
@@ -274,6 +427,8 @@ impl SpiceDataDistributorActor {
             executor_sender,
             witness_validator_sender,
             pending_partial_data: LruCache::new(PENDING_PARTIAL_DATA_CAP),
+            pending_retries: HashSet::new(),
+            distributing_data: LruCache::new(NonZeroUsize::new(100).unwrap()),
         }
     }
 
@@ -283,6 +438,7 @@ impl SpiceDataDistributorActor {
         data_id: SpiceDataIdentifier,
         data: &SpiceData,
     ) -> Result<(), Error> {
+        self.distributing_data.push(data_id.clone(), data.clone());
         let block = self.chain_store.get_block(data_id.block_hash())?;
         let Some(signer) = self.validator_signer.get() else {
             debug_assert!(false);
@@ -487,6 +643,7 @@ impl SpiceDataDistributorActor {
                     ));
                 }
                 reed_solomon::InsertPartResult::Decoded(Ok(data)) => {
+                    self.pending_retries.remove(&id);
                     entry.decoded = true;
                     let data_hash = hash(&borsh::to_vec(&data).unwrap());
                     if data_hash != commitment.hash {

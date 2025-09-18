@@ -23,7 +23,9 @@ use crate::routing::NetworkTopologyChange;
 use crate::routing::route_back_cache::RouteBackCache;
 use crate::shards_manager::ShardsManagerRequestFromNetwork;
 use crate::snapshot_hosts::{SnapshotHostInfoError, SnapshotHostsCache};
-use crate::spice_data_distribution::SpiceIncomingPartialData;
+use crate::spice_data_distribution::{
+    RequestSpiceData, SpiceDataDistributorSenderForNetwork, SpiceIncomingPartialData,
+};
 use crate::state_witness::{
     ChunkContractAccessesMessage, ChunkStateWitnessAckMessage, ContractCodeRequestMessage,
     ContractCodeResponseMessage, PartialEncodedContractDeploysMessage,
@@ -115,7 +117,7 @@ pub(crate) struct NetworkState {
     pub peer_manager_adapter: PeerManagerSenderForNetwork,
     pub shards_manager_adapter: Sender<ShardsManagerRequestFromNetwork>,
     pub partial_witness_adapter: PartialWitnessSenderForNetwork,
-    pub spice_data_distributor_adapter: Sender<SpiceIncomingPartialData>,
+    pub spice_data_distributor_adapter: SpiceDataDistributorSenderForNetwork,
 
     /// Network-related info about the chain.
     pub chain_info: ArcSwap<Option<ChainInfo>>,
@@ -193,7 +195,7 @@ impl NetworkState {
         shards_manager_adapter: Sender<ShardsManagerRequestFromNetwork>,
         partial_witness_adapter: PartialWitnessSenderForNetwork,
         whitelist_nodes: Vec<WhitelistNode>,
-        spice_data_distributor_adapter: Sender<SpiceIncomingPartialData>,
+        spice_data_distributor_adapter: SpiceDataDistributorSenderForNetwork,
     ) -> Self {
         Self {
             runtime: Runtime::new(),
@@ -774,6 +776,11 @@ impl NetworkState {
                         data: spice_partial_data,
                         sender: msg_author,
                     });
+                    None
+                }
+                T1MessageBody::RequestSpiceData(data_id, requester) => {
+                    self.spice_data_distributor_adapter
+                        .send(RequestSpiceData { data_id, requester });
                     None
                 }
             },

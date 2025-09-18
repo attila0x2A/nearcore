@@ -643,9 +643,9 @@ pub fn start_with_config_and_synchronization(
         shards_manager_adapter.as_sender(),
         partial_witness_actor.into_multi_sender(),
         if cfg!(feature = "protocol_feature_spice") {
-            spice_data_distributor_adapter.as_sender()
+            spice_data_distributor_adapter.as_multi_sender()
         } else {
-            noop().into_sender()
+            noop().into_multi_sender()
         },
         genesis_id,
     )

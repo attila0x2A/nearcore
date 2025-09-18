@@ -38,6 +38,7 @@ pub use _proto::network as proto;
 use crate::network_protocol::proto_conv::trace_context::{
     extract_span_context, inject_trace_context,
 };
+use crate::spice_data_distribution::SpiceDataIdentifier;
 use crate::spice_data_distribution::SpicePartialData;
 use near_async::time;
 use near_crypto::PublicKey;
@@ -630,6 +631,9 @@ impl TieredMessageBody {
             RoutedMessageBody::SpicePartialData(spice_partial_data) => {
                 T1MessageBody::SpicePartialData(spice_partial_data).into()
             }
+            RoutedMessageBody::RequestSpiceData(data_id, requester) => {
+                T1MessageBody::RequestSpiceData(data_id, requester).into()
+            }
             RoutedMessageBody::PartialEncodedContractDeploys(partial_encoded_contract_deploys) => {
                 T2MessageBody::PartialEncodedContractDeploys(partial_encoded_contract_deploys)
                     .into()
@@ -688,6 +692,7 @@ pub enum T1MessageBody {
     ContractCodeRequest(ContractCodeRequest),
     ContractCodeResponse(ContractCodeResponse),
     SpicePartialData(SpicePartialData),
+    RequestSpiceData(SpiceDataIdentifier, AccountId),
 }
 
 impl T1MessageBody {
@@ -795,6 +800,7 @@ pub enum RoutedMessageBody {
     PartialEncodedContractDeploys(PartialEncodedContractDeploys),
     StateHeaderRequest(StateHeaderRequest),
     SpicePartialData(SpicePartialData),
+    RequestSpiceData(SpiceDataIdentifier, AccountId),
 }
 
 impl RoutedMessageBody {
@@ -927,6 +933,9 @@ impl fmt::Debug for RoutedMessageBody {
                 "SpicePartialData(id={:?}, commitment={:?})",
                 spice_partial_data.id, spice_partial_data.commitment,
             ),
+            RoutedMessageBody::RequestSpiceData(data_id, requester) => {
+                write!(f, "RequestSpiceData(id={:?}, requester={requester:?})", data_id)
+            }
         }
     }
 }
@@ -966,6 +975,9 @@ impl From<TieredMessageBody> for RoutedMessageBody {
                 }
                 T1MessageBody::SpicePartialData(spice_partial_data) => {
                     RoutedMessageBody::SpicePartialData(spice_partial_data)
+                }
+                T1MessageBody::RequestSpiceData(data_id, requester) => {
+                    RoutedMessageBody::RequestSpiceData(data_id, requester)
                 }
             },
             TieredMessageBody::T2(body) => match *body {

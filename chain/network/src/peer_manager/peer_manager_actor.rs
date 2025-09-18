@@ -12,7 +12,9 @@ use crate::peer_manager::connection;
 use crate::peer_manager::network_state::{NetworkState, WhitelistNode};
 use crate::peer_manager::peer_store;
 use crate::shards_manager::ShardsManagerRequestFromNetwork;
-use crate::spice_data_distribution::SpiceIncomingPartialData;
+use crate::spice_data_distribution::{
+    SpiceDataDistributorSenderForNetwork, SpiceIncomingPartialData,
+};
 use crate::state_witness::PartialWitnessSenderForNetwork;
 use crate::stats::metrics;
 use crate::store;
@@ -220,7 +222,7 @@ impl PeerManagerActor {
         peer_manager_adapter: PeerManagerSenderForNetwork,
         shards_manager_adapter: Sender<ShardsManagerRequestFromNetwork>,
         partial_witness_adapter: PartialWitnessSenderForNetwork,
-        spice_data_distributor_adapter: Sender<SpiceIncomingPartialData>,
+        spice_data_distributor_adapter: SpiceDataDistributorSenderForNetwork,
         genesis_id: GenesisId,
     ) -> anyhow::Result<actix::Addr<Self>> {
         let config = config.verify().context("config")?;
@@ -1254,6 +1256,19 @@ impl PeerManagerActor {
                         // critical for chain progress, however if execution was to lag behind
                         // chain would slow down.
                         T1MessageBody::SpicePartialData(partial_data).into(),
+                    );
+                }
+                NetworkResponses::NoResponse
+            }
+            NetworkRequests::RequestSpiceData { data_id, producers, requester } => {
+                for (data_id, account) in
+                    std::iter::repeat_n(data_id, producers.len()).zip(producers)
+                {
+                    self.state.send_message_to_account(
+                        &self.clock,
+                        &account,
+                        // FIXME: Extra unnecessary clone
+                        T1MessageBody::RequestSpiceData(data_id, requester.clone()).into(),
                     );
                 }
                 NetworkResponses::NoResponse

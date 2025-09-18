@@ -11,7 +11,7 @@ pub use crate::network_protocol::{
     StateResponseInfoV1, StateResponseInfoV2,
 };
 use crate::routing::routing_table_view::RoutingTableInfo;
-use crate::spice_data_distribution::SpicePartialData;
+use crate::spice_data_distribution::{SpiceDataIdentifier, SpicePartialData};
 pub use crate::state_sync::StateSyncResponse;
 use near_async::messaging::{AsyncSender, Sender};
 use near_async::{MultiSend, MultiSendMessage, MultiSenderFrom, time};
@@ -312,6 +312,12 @@ pub enum NetworkRequests {
     PartialEncodedContractDeploys(Vec<AccountId>, PartialEncodedContractDeploys),
     /// Message containing spice partial data.
     SpicePartialData { partial_data: SpicePartialData, recipients: HashSet<AccountId> },
+    // FIXME
+    RequestSpiceData {
+        data_id: SpiceDataIdentifier,
+        producers: HashSet<AccountId>,
+        requester: AccountId,
+    },
 }
 
 #[derive(Debug, actix::Message, strum::IntoStaticStr)]

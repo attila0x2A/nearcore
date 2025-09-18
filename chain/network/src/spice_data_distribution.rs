@@ -1,3 +1,5 @@
+use near_async::messaging::Sender;
+use near_async::{MultiSend, MultiSendMessage, MultiSenderFrom};
 use near_primitives::hash::CryptoHash;
 use near_primitives::merkle::MerklePath;
 use near_primitives::network::PeerId;
@@ -8,6 +10,20 @@ use near_primitives::types::{AccountId, MerkleHash, ShardId};
 pub struct SpiceIncomingPartialData {
     pub data: SpicePartialData,
     pub sender: PeerId,
+}
+
+#[derive(actix::Message, Debug, Clone)]
+#[rtype(result = "()")]
+pub struct RequestSpiceData {
+    pub data_id: SpiceDataIdentifier,
+    // FIXME: Should use route back I've seen in some other places instead?
+    pub requester: AccountId,
+}
+
+#[derive(Clone, MultiSend, MultiSenderFrom, MultiSendMessage)]
+pub struct SpiceDataDistributorSenderForNetwork {
+    pub incoming: Sender<SpiceIncomingPartialData>,
+    pub request: Sender<RequestSpiceData>,
 }
 
 #[derive(borsh::BorshSerialize, borsh::BorshDeserialize, Debug, Clone, PartialEq, Eq, Hash)]
