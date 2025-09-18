@@ -314,21 +314,25 @@ impl SpiceDataDistributorActor {
             encoded_length: encoded_length as u64,
         };
 
-        self.network_adapter.send(PeerManagerMessageRequest::NetworkRequests(
-            NetworkRequests::SpicePartialData {
-                partial_data: SpicePartialData {
-                    id: data_id,
-                    commitment,
-                    parts: vec![SpiceDataPart {
-                        part_ord: me_ord as u64,
-                        part: boxed_parts[me_ord].take().unwrap(),
-                        merkle_proof: merkle_proofs.swap_remove(me_ord),
-                    }],
-                    sender: me.clone(),
+        tracing::debug!(target: "spice_data_distribution", ?data_id, ?recipients, "distributing data");
+        let partial_data = SpicePartialData {
+            id: data_id,
+            commitment,
+            parts: vec![SpiceDataPart {
+                part_ord: me_ord as u64,
+                part: boxed_parts[me_ord].take().unwrap(),
+                merkle_proof: merkle_proofs.swap_remove(me_ord),
+            }],
+            sender: me.clone(),
+        };
+        for _ in 0..5 {
+            self.network_adapter.send(PeerManagerMessageRequest::NetworkRequests(
+                NetworkRequests::SpicePartialData {
+                    partial_data: partial_data.clone(),
+                    recipients: recipients.clone(),
                 },
-                recipients,
-            },
-        ));
+            ));
+        }
         Ok(())
     }
 
@@ -417,6 +421,8 @@ impl SpiceDataDistributorActor {
         }
         // TODO(spice): Verify that size of partial data isn't too large.
         let sender = data.sender.clone();
+        // FIXME:
+        tracing::debug!(target: "spice_data_distribution", ?id, "saving pending partial data");
         self.pending_partial_data
             .get_or_insert_mut(*id.block_hash(), Vec::new)
             .push((data, sender));
