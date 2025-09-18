@@ -464,6 +464,8 @@ pub fn start_with_config_and_synchronization(
     let spice_data_distributor_adapter = LateBoundSender::new();
 
     let spice_client_config = if cfg!(feature = "protocol_feature_spice") {
+        // FIXME: remove
+        tracing::info!(target: "fixme", "starting up with spice");
         let core_processor = CoreStatementsProcessor::new(
             runtime.store().chain_store(),
             epoch_manager.clone(),
@@ -489,6 +491,24 @@ pub fn start_with_config_and_synchronization(
         }
     };
     let core_processor = spice_client_config.core_processor.clone();
+
+    // FIXME: Make a helper
+    // FIXME: May be important for this to start first so that all new blocks are received.
+    if cfg!(feature = "protocol_feature_spice") {
+        let spice_data_distributor_actor = SpiceDataDistributorActor::new(
+            epoch_manager.clone(),
+            runtime.store().chain_store(),
+            core_processor.clone(),
+            config.validator_signer.clone(),
+            network_adapter.as_multi_sender(),
+            chunk_executor_adapter.as_sender(),
+            spice_chunk_validator_adapter.as_sender(),
+        );
+        let spice_data_distributor_addr =
+            actor_system.spawn_tokio_actor(spice_data_distributor_actor);
+        spice_data_distributor_adapter.bind(spice_data_distributor_addr);
+    }
+
     let StartClientResult {
         client_actor,
         tx_pool,
@@ -522,20 +542,8 @@ pub fn start_with_config_and_synchronization(
     client_adapter_for_partial_witness_actor.bind(ChunkValidationSenderForPartialWitness {
         chunk_state_witness: chunk_validation_actor.into_sender(),
     });
-    // FIXME: Make a helper
-    if cfg!(feature = "protocol_feature_spice") {
-        // FIXME: remove
-        tracing::info!(target: "fixme", "starting up with spice");
-        let spice_data_distributor_actor = SpiceDataDistributorActor::new(
-            epoch_manager.clone(),
-            runtime.store().chain_store(),
-            core_processor.clone(),
-            config.validator_signer.clone(),
-            network_adapter.as_multi_sender(),
-            chunk_executor_adapter.as_sender(),
-            spice_chunk_validator_adapter.as_sender(),
-        );
 
+    if cfg!(feature = "protocol_feature_spice") {
         let chunk_executor_actor = ChunkExecutorActor::new(
             runtime.store().clone(),
             &chain_genesis,
@@ -570,11 +578,8 @@ pub fn start_with_config_and_synchronization(
         let chunk_executor_addr = actor_system.spawn_tokio_actor(chunk_executor_actor);
         let spice_chunk_validator_addr =
             actor_system.spawn_tokio_actor(spice_chunk_validator_actor);
-        let spice_data_distributor_addr =
-            actor_system.spawn_tokio_actor(spice_data_distributor_actor);
         chunk_executor_adapter.bind(chunk_executor_addr);
         spice_chunk_validator_adapter.bind(spice_chunk_validator_addr);
-        spice_data_distributor_adapter.bind(spice_data_distributor_addr);
     }
 
     let shards_manager_actor = start_shards_manager(

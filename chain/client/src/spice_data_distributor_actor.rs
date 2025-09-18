@@ -226,6 +226,7 @@ impl Handler<SpiceIncomingPartialData> for SpiceDataDistributorActor {
     fn handle(&mut self, SpiceIncomingPartialData { data, sender: _ }: SpiceIncomingPartialData) {
         let data_id = data.id.clone();
         let commitment = data.commitment.clone();
+        tracing::debug!(target: "spice_data_distribution", ?data_id, "received data");
         let Err(err) = self.receive_data(data) else {
             return;
         };
@@ -241,6 +242,7 @@ impl Handler<SpiceIncomingPartialData> for SpiceDataDistributorActor {
 
 impl Handler<ProcessedBlock> for SpiceDataDistributorActor {
     fn handle(&mut self, ProcessedBlock { block_hash }: ProcessedBlock) {
+        tracing::debug!(target: "spice_data_distribution", ?block_hash, "processed block");
         if let Err(err) = self.process_pending_partial_data(block_hash) {
             tracing::error!(target: "spice_data_distribution", ?err, ?block_hash, "failure when processing pending partial data");
         }
@@ -325,14 +327,12 @@ impl SpiceDataDistributorActor {
             }],
             sender: me.clone(),
         };
-        for _ in 0..5 {
-            self.network_adapter.send(PeerManagerMessageRequest::NetworkRequests(
-                NetworkRequests::SpicePartialData {
-                    partial_data: partial_data.clone(),
-                    recipients: recipients.clone(),
-                },
-            ));
-        }
+        self.network_adapter.send(PeerManagerMessageRequest::NetworkRequests(
+            NetworkRequests::SpicePartialData {
+                partial_data: partial_data.clone(),
+                recipients: recipients.clone(),
+            },
+        ));
         Ok(())
     }
 
@@ -682,6 +682,7 @@ impl SpiceDataDistributorActor {
     fn process_pending_partial_data(&mut self, block_hash: CryptoHash) -> Result<(), Error> {
         let ready_data = self.pending_partial_data.pop(&block_hash).unwrap_or_default();
         if ready_data.is_empty() {
+            tracing::debug!(target: "spice_data_distribution", ?block_hash, "no pending data");
             return Ok(());
         }
         let block = self.chain_store.get_block(&block_hash)?;
@@ -689,6 +690,7 @@ impl SpiceDataDistributorActor {
         for (data, _sender) in ready_data {
             let data_id = data.id.clone();
             let commitment = data.commitment.clone();
+            tracing::debug!(target: "spice_data_distribution", ?block_hash, ?data_id, "processing pending data");
             match self.receive_data_with_block(data, &block) {
                 Ok(_) => continue,
                 Err(Error::DataIsKnown(err)) => {
