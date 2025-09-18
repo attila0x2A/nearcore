@@ -29,6 +29,7 @@ use near_epoch_manager::EpochManagerAdapter;
 use near_epoch_manager::shard_assignment::shard_id_to_uid;
 use near_epoch_manager::shard_tracker::ShardTracker;
 use near_network::types::PeerManagerAdapter;
+use near_primitives::block::ChunkType;
 use near_primitives::block::Chunks;
 use near_primitives::hash::CryptoHash;
 use near_primitives::optimistic_block::{BlockToApply, CachedShardUpdateKey};
@@ -332,9 +333,36 @@ impl ChunkExecutorActor {
                     return Ok(TryApplyChunksOutcome::NotReady);
                 }
 
-                let proofs =
+                let mut proofs =
                     get_receipt_proofs_for_shard(&store, prev_block_hash, prev_block_shard_id)?;
+                // FIXME: not the best approach, better to modify block production
+                // - and validation
+                {
+                    let present_shard_ids: HashSet<_> =
+                        proofs.iter().map(|proof| proof.1.from_shard_id).collect();
+                    let chunks = prev_block.chunks();
+                    for chunk in chunks.iter() {
+                        // if it's an old chunk it means we should have applied it's receipts
+                        // before.
+                        let old_chunk = match chunk {
+                            ChunkType::New(_) => continue,
+                            ChunkType::Old(header) => header,
+                        };
+                        if present_shard_ids.contains(&old_chunk.shard_id()) {
+                            continue;
+                        }
+                        proofs.push(ReceiptProof(
+                            vec![],
+                            ShardProof {
+                                from_shard_id: old_chunk.shard_id(),
+                                to_shard_id: prev_block_shard_id,
+                                proof: vec![],
+                            },
+                        ));
+                    }
+                }
                 if proofs.len() != prev_block_shard_ids.len() {
+                    // FIXME: Include which shards are missing
                     tracing::debug!(
                         target: "chunk_executor",
                         %block_hash,
