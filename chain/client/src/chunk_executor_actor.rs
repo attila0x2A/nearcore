@@ -197,10 +197,10 @@ impl Handler<ProcessedBlock> for ChunkExecutorActor {
     fn handle(&mut self, ProcessedBlock { block_hash }: ProcessedBlock) {
         match self.try_apply_chunks(&block_hash) {
             Ok(TryApplyChunksOutcome::Scheduled) => {}
-            Ok(TryApplyChunksOutcome::NotReady) => {
+            Ok(TryApplyChunksOutcome::NotReady(reason)) => {
                 // We will retry applying it by looking at all next blocks after receiving
                 // additional execution result endorsements or receipts.
-                tracing::debug!(target: "chunk_executor", %block_hash, "not yet ready for processing");
+                tracing::debug!(target: "chunk_executor", %block_hash, ?reason, "not yet ready for processing");
             }
             Ok(TryApplyChunksOutcome::BlockAlreadyAccepted) => {
                 tracing::warn!(
@@ -244,7 +244,8 @@ impl Handler<ExecutorApplyChunksDone> for ChunkExecutorActor {
 
 enum TryApplyChunksOutcome {
     Scheduled,
-    NotReady,
+    // FIXME: Don't use string: instead use different variants for different reasons
+    NotReady(String),
     BlockAlreadyAccepted,
 }
 
@@ -266,7 +267,10 @@ impl ChunkExecutorActor {
         let Some(prev_block_execution_results) =
             self.core_processor.get_block_execution_results(&prev_block)?
         else {
-            return Ok(TryApplyChunksOutcome::NotReady);
+            return Ok(TryApplyChunksOutcome::NotReady(format!(
+                "Missing execution results for prev_block: {:?}",
+                prev_block.hash()
+            )));
         };
 
         // TODO(spice): refactor try_process_pending_unverified_receipts to take prev_block_execution_results as argument.
@@ -305,7 +309,9 @@ impl ChunkExecutorActor {
                         %prev_block_hash,
                         %prev_block_shard_id,
                         "previous block is not executed yet");
-                    return Ok(TryApplyChunksOutcome::NotReady);
+                    return Ok(TryApplyChunksOutcome::NotReady(format!(
+                        "previous block is not executed yet"
+                    )));
                 }
 
                 let proofs =
@@ -318,7 +324,17 @@ impl ChunkExecutorActor {
                         %prev_block_shard_id,
                         "missing receipts to apply all tracked chunks for a block"
                     );
-                    return Ok(TryApplyChunksOutcome::NotReady);
+                    let mut missing_receipts = Vec::new();
+                    let to_shard_id = prev_block_shard_id;
+                    for prev_block_shard_id in prev_block_shard_ids {
+                        if !proofs.iter().any(|proof| proof.1.from_shard_id == prev_block_shard_id)
+                        {
+                            missing_receipts.push(prev_block_shard_id);
+                        }
+                    }
+                    return Ok(TryApplyChunksOutcome::NotReady(format!(
+                        "missing receipts to apply all tracked chunks for a block; to_shard_id={to_shard_id}; missing_receipts_from_shards: {missing_receipts:?}"
+                    )));
                 }
                 all_receipts.insert(prev_block_shard_id, proofs);
             }
@@ -343,8 +359,8 @@ impl ChunkExecutorActor {
         for next_block_hash in next_block_hashes {
             match self.try_apply_chunks(&next_block_hash)? {
                 TryApplyChunksOutcome::Scheduled => {}
-                TryApplyChunksOutcome::NotReady => {
-                    tracing::debug!(target: "chunk_executor", %next_block_hash, "not yet ready for processing");
+                TryApplyChunksOutcome::NotReady(reason) => {
+                    tracing::debug!(target: "chunk_executor", ?reason, %next_block_hash, "not yet ready for processing");
                 }
                 TryApplyChunksOutcome::BlockAlreadyAccepted => {}
             }
