@@ -398,7 +398,6 @@ impl ShardTries {
             height = block_height,
             shard_id = %shard_uid.shard_id(),
             tag_block_production = true,
-            trie_changes = ?trie_changes,
         ),
         ret,
     )]

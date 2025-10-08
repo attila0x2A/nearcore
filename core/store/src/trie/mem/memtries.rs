@@ -4,6 +4,7 @@ use near_primitives::errors::StorageError;
 use near_primitives::hash::CryptoHash;
 use near_primitives::shard_layout::ShardUId;
 use near_primitives::types::{BlockHeight, StateRoot};
+use tracing::instrument;
 
 use crate::Trie;
 use crate::trie::MemTrieChanges;
@@ -134,6 +135,9 @@ impl MemTries {
         }
     }
 
+    #[instrument(
+        target = "memtrie", level = "debug", skip(self, mem_root), fields(shard = ?self.shard_uid),
+    )]
     fn insert_root(
         &mut self,
         state_root: StateRoot,
@@ -187,6 +191,9 @@ impl MemTries {
         }
     }
 
+    #[instrument(
+        target = "memtrie", level = "debug", skip(self), fields(shard = ?self.shard_uid),
+    )]
     fn delete_root(&mut self, state_root: &CryptoHash) {
         if let Some(ids) = self.roots.get_mut(state_root) {
             let last_id = ids.last().unwrap();
