@@ -1026,7 +1026,7 @@ async fn do_state_sync_dump(
     future_spawner: Arc<dyn FutureSpawner>,
 ) {
     // TODO(spice): Make state sync work with spice.
-    if cfg!(feature = "protocol_feature_spice") {
+    if true || cfg!(feature = "protocol_feature_spice") {
         return;
     }
 

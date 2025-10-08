@@ -678,38 +678,38 @@ impl DBCol {
     }
 
     pub fn receipt_proofs() -> DBCol {
-        #[cfg(feature = "protocol_feature_spice")]
+        // #[cfg(feature = "protocol_feature_spice")]
         return DBCol::ReceiptProofs;
-        #[cfg(not(feature = "protocol_feature_spice"))]
-        panic!("Expected protocol_feature_spice to be enabled")
+        // #[cfg(not(feature = "protocol_feature_spice"))]
+        // panic!("Expected protocol_feature_spice to be enabled")
     }
 
     pub fn all_next_block_hashes() -> DBCol {
-        #[cfg(feature = "protocol_feature_spice")]
+        // #[cfg(feature = "protocol_feature_spice")]
         return DBCol::AllNextBlockHashes;
-        #[cfg(not(feature = "protocol_feature_spice"))]
-        panic!("Expected protocol_feature_spice to be enabled")
+        // #[cfg(not(feature = "protocol_feature_spice"))]
+        // panic!("Expected protocol_feature_spice to be enabled")
     }
 
     pub fn endorsements() -> DBCol {
-        #[cfg(feature = "protocol_feature_spice")]
+        // #[cfg(feature = "protocol_feature_spice")]
         return DBCol::Endorsements;
-        #[cfg(not(feature = "protocol_feature_spice"))]
-        panic!("Expected protocol_feature_spice to be enabled")
+        // #[cfg(not(feature = "protocol_feature_spice"))]
+        // panic!("Expected protocol_feature_spice to be enabled")
     }
 
     pub fn execution_results() -> DBCol {
-        #[cfg(feature = "protocol_feature_spice")]
+        // #[cfg(feature = "protocol_feature_spice")]
         return DBCol::ExecutionResults;
-        #[cfg(not(feature = "protocol_feature_spice"))]
-        panic!("Expected protocol_feature_spice to be enabled")
+        // #[cfg(not(feature = "protocol_feature_spice"))]
+        // panic!("Expected protocol_feature_spice to be enabled")
     }
 
     pub fn uncertified_chunks() -> DBCol {
-        #[cfg(feature = "protocol_feature_spice")]
+        // #[cfg(feature = "protocol_feature_spice")]
         return DBCol::UncertifiedChunks;
-        #[cfg(not(feature = "protocol_feature_spice"))]
-        panic!("Expected protocol_feature_spice to be enabled")
+        // #[cfg(not(feature = "protocol_feature_spice"))]
+        // panic!("Expected protocol_feature_spice to be enabled")
     }
 }
 

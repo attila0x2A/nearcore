@@ -934,7 +934,7 @@ impl Chain {
                 return Err(Error::InvalidBlockMerkleRoot);
             }
 
-            if !cfg!(feature = "protocol_feature_spice") {
+            if false && !cfg!(feature = "protocol_feature_spice") {
                 validate_chunk_endorsements_in_header(self.epoch_manager.as_ref(), header)?;
             }
         }
@@ -1281,7 +1281,7 @@ impl Chain {
         chunk_headers: Vec<ShardChunkHeader>,
         apply_chunks_done_sender: Option<ApplyChunksDoneSender>,
     ) -> Result<(), Error> {
-        if cfg!(feature = "protocol_feature_spice") {
+        if true || cfg!(feature = "protocol_feature_spice") {
             return Ok(());
         }
 
@@ -2348,13 +2348,13 @@ impl Chain {
 
         self.validate_chunk_headers(&block, &prev_block)?;
 
-        if !cfg!(feature = "protocol_feature_spice") {
+        if false && !cfg!(feature = "protocol_feature_spice") {
             validate_chunk_endorsements_in_block(self.epoch_manager.as_ref(), &block)?;
         }
 
         self.ping_missing_chunks(prev_hash, block)?;
 
-        let incoming_receipts = if cfg!(feature = "protocol_feature_spice") {
+        let incoming_receipts = if true || cfg!(feature = "protocol_feature_spice") {
             // TODO(spice): move incoming receipts collection inside apply_chunks_preprocessing
             HashMap::default()
         } else {
@@ -2368,7 +2368,7 @@ impl Chain {
         // Check if block can be finalized and drop it otherwise.
         self.check_if_finalizable(header)?;
 
-        if cfg!(feature = "protocol_feature_spice") {
+        if true || cfg!(feature = "protocol_feature_spice") {
             self.spice_core_processor
                 .validate_core_statements_in_block(&block)
                 .map_err(Box::new)?;
@@ -3034,7 +3034,7 @@ impl Chain {
         mut state_patch: SandboxStatePatch,
         invalid_chunks: &mut Vec<ShardChunkHeader>,
     ) -> Result<Vec<UpdateShardJob>, Error> {
-        if cfg!(feature = "protocol_feature_spice") {
+        if true || cfg!(feature = "protocol_feature_spice") {
             return Ok(vec![]);
         }
 

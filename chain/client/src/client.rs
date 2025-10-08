@@ -916,7 +916,7 @@ impl Client {
         let next_epoch_protocol_version =
             self.epoch_manager.get_epoch_protocol_version(&next_epoch_id)?;
 
-        let core_statements = if cfg!(feature = "protocol_feature_spice") {
+        let core_statements = if true || cfg!(feature = "protocol_feature_spice") {
             Some(self.chain.spice_core_processor.core_statement_for_next_block(&prev_header)?)
         } else {
             None
@@ -1792,7 +1792,7 @@ impl Client {
                     continue;
                 }
             };
-            if !cfg!(feature = "protocol_feature_spice") {
+            if false && !cfg!(feature = "protocol_feature_spice") {
                 if let Err(err) = self.send_chunk_state_witness_to_chunk_validators(
                     &epoch_id,
                     block.header(),

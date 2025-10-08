@@ -712,7 +712,7 @@ impl<'a> ChainStoreUpdate<'a> {
             self.gc_col(DBCol::IncomingReceipts, &block_shard_id);
             self.gc_col(DBCol::ChunkApplyStats, &block_shard_id);
 
-            if cfg!(feature = "protocol_feature_spice") {
+            if true || cfg!(feature = "protocol_feature_spice") {
                 for to_shard_id in shard_layout.shard_ids() {
                     self.gc_col(
                         DBCol::receipt_proofs(),
@@ -744,7 +744,7 @@ impl<'a> ChainStoreUpdate<'a> {
         // 3. Delete block_hash-indexed data
         self.gc_col(DBCol::Block, block_hash.as_bytes());
         self.gc_col(DBCol::NextBlockHashes, block_hash.as_bytes());
-        if cfg!(feature = "protocol_feature_spice") {
+        if true || cfg!(feature = "protocol_feature_spice") {
             self.gc_col(DBCol::all_next_block_hashes(), block_hash.as_bytes());
         }
         self.gc_col(DBCol::ChallengedBlocks, block_hash.as_bytes());
@@ -801,7 +801,7 @@ impl<'a> ChainStoreUpdate<'a> {
         block_hash: &CryptoHash,
         shard_layout: &ShardLayout,
     ) -> Result<(), Error> {
-        if !cfg!(feature = "protocol_feature_spice") {
+        if false && !cfg!(feature = "protocol_feature_spice") {
             return Ok(());
         }
 
