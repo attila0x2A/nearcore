@@ -339,28 +339,28 @@ pub enum DBCol {
     /// receipts to the given shard.
     /// - *Rows*: (BlockHash || ShardId || ShardId)
     /// - *Content type*: `near_primitives::sharding::ReceiptProof`
-    // #[cfg(feature = "protocol_feature_spice")]
+    #[cfg(feature = "protocol_feature_spice")]
     ReceiptProofs,
     /// All known processed next block hashes regardless of canonical chain.
     /// - *Rows*: BlockHash (CryptoHash)
     /// - *Content type*: next block: Vec<BlockHash (CryptoHash)>
-    // #[cfg(feature = "protocol_feature_spice")]
+    #[cfg(feature = "protocol_feature_spice")]
     AllNextBlockHashes,
     /// For spice contains execution results endorsements.
     /// - *Rows*: SpiceEndorsementKey (BlockHash || ShardId || AccountId)
     /// - *Content type*: [near_primitives::stateless_validation::spice_chunk_endorsement::SpiceStoredVerifiedEndorsement]
-    // #[cfg(feature = "protocol_feature_spice")]
+    #[cfg(feature = "protocol_feature_spice")]
     Endorsements,
     /// For spice contains execution results of applying the chunk.
     /// Should only contain endorsed execution results.
     /// - *Rows*: (BlockHash || ShardId)
     /// - *Content type*: ([near_primitives::types::ChunkExecutionResult])
-    // #[cfg(feature = "protocol_feature_spice")]
+    #[cfg(feature = "protocol_feature_spice")]
     ExecutionResults,
     /// For spice contains uncertified chunks for this block and all it's ancestry.
     /// - *Rows*: BlockHash (CryptoHash)
     /// - *Content type*: Vec<[near_primitives::types::SpiceUncertifiedChunkInfo]>
-    // #[cfg(feature = "protocol_feature_spice")]
+    #[cfg(feature = "protocol_feature_spice")]
     UncertifiedChunks,
 }
 
@@ -512,15 +512,15 @@ impl DBCol {
             | DBCol::Transactions
             | DBCol::StateShardUIdMapping
             | DBCol::ChunkApplyStats => true,
-            // #[cfg(feature = "protocol_feature_spice")]
+            #[cfg(feature = "protocol_feature_spice")]
             | DBCol::ReceiptProofs => true,
-            // #[cfg(feature = "protocol_feature_spice")]
+            #[cfg(feature = "protocol_feature_spice")]
             | DBCol::AllNextBlockHashes => false,
-            // #[cfg(feature = "protocol_feature_spice")]
+            #[cfg(feature = "protocol_feature_spice")]
             | DBCol::Endorsements => false,
-            // #[cfg(feature = "protocol_feature_spice")]
+            #[cfg(feature = "protocol_feature_spice")]
             | DBCol::ExecutionResults => false,
-            // #[cfg(feature = "protocol_feature_spice")]
+            #[cfg(feature = "protocol_feature_spice")]
             | DBCol::UncertifiedChunks => false,
             // TODO
             DBCol::ChallengedBlocks => false,
@@ -664,15 +664,15 @@ impl DBCol {
             DBCol::StateSyncHashes => &[DBKeyType::EpochId],
             DBCol::StateSyncNewChunks => &[DBKeyType::BlockHash],
             DBCol::ChunkApplyStats => &[DBKeyType::BlockHash, DBKeyType::ShardId],
-            // #[cfg(feature = "protocol_feature_spice")]
+            #[cfg(feature = "protocol_feature_spice")]
             DBCol::ReceiptProofs => &[DBKeyType::BlockHash, DBKeyType::ShardId, DBKeyType::ShardId],
-            // #[cfg(feature = "protocol_feature_spice")]
+            #[cfg(feature = "protocol_feature_spice")]
             DBCol::AllNextBlockHashes => &[DBKeyType::BlockHash],
-            // #[cfg(feature = "protocol_feature_spice")]
+            #[cfg(feature = "protocol_feature_spice")]
             DBCol::Endorsements => &[DBKeyType::SpiceEndorsementKey],
-            // #[cfg(feature = "protocol_feature_spice")]
+            #[cfg(feature = "protocol_feature_spice")]
             DBCol::ExecutionResults => &[DBKeyType::BlockHash, DBKeyType::ShardId],
-            // #[cfg(feature = "protocol_feature_spice")]
+            #[cfg(feature = "protocol_feature_spice")]
             DBCol::UncertifiedChunks => &[DBKeyType::BlockHash],
         }
     }

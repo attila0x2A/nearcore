@@ -1158,23 +1158,23 @@ impl<'a> ChainStoreUpdate<'a> {
             DBCol::ChunkApplyStats => {
                 store_update.delete(col, key);
             }
-            // #[cfg(feature = "protocol_feature_spice")]
+            #[cfg(feature = "protocol_feature_spice")]
             DBCol::ReceiptProofs => {
                 store_update.delete(col, key);
             }
-            // #[cfg(feature = "protocol_feature_spice")]
+            #[cfg(feature = "protocol_feature_spice")]
             DBCol::AllNextBlockHashes => {
                 store_update.delete(col, key);
             }
-            // #[cfg(feature = "protocol_feature_spice")]
+            #[cfg(feature = "protocol_feature_spice")]
             DBCol::Endorsements => {
                 store_update.delete(col, key);
             }
-            // #[cfg(feature = "protocol_feature_spice")]
+            #[cfg(feature = "protocol_feature_spice")]
             DBCol::ExecutionResults => {
                 store_update.delete(col, key);
             }
-            // #[cfg(feature = "protocol_feature_spice")]
+            #[cfg(feature = "protocol_feature_spice")]
             DBCol::UncertifiedChunks => {
                 store_update.delete(col, key);
             }
