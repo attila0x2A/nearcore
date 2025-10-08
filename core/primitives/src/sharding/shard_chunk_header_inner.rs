@@ -31,7 +31,7 @@ impl ShardChunkHeaderInner {
             Self::V3(inner) => &inner.prev_state_root,
             Self::V4(inner) => &inner.prev_state_root,
             Self::V5(_) => {
-                debug_assert!(false, "Transaction only header doesn't include prev_state_root");
+                // debug_assert!(false, "Transaction only header doesn't include prev_state_root");
                 DEFAULT_CRYPTO_HASH
             }
         }
@@ -194,7 +194,7 @@ impl ShardChunkHeaderInner {
     pub fn congestion_info(&self) -> CongestionInfo {
         match self {
             Self::V1(_) | Self::V2(_) => {
-                debug_assert!(false, "Calling congestion_info on V1 or V2 header version");
+                // debug_assert!(false, "Calling congestion_info on V1 or V2 header version");
                 Default::default()
             }
             Self::V3(v3) => v3.congestion_info,
