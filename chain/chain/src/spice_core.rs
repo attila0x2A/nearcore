@@ -490,6 +490,8 @@ impl CoreStatementsProcessor {
     ) -> Result<(), ProcessChunkError> {
         assert!(cfg!(feature = "protocol_feature_spice"));
 
+        tracing::debug!(target: "spice_core", ?endorsement, "processing endorsement");
+
         let tracker = self.read();
 
         let block = match tracker.chain_store.get_block(endorsement.block_hash()) {

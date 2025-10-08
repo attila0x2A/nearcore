@@ -928,7 +928,8 @@ impl SpiceDataDistributorActor {
     ) -> Result<(), Error> {
         // FIXME: avoid clone
         let Some(data) = self.recent_produced_data.get(&data_id).cloned() else {
-            debug!(?data_id, ?requester, "received request for unknown data");
+            // FIXME
+            // debug!(?data_id, ?requester, "received request for unknown data");
             // FIXME: return an error
             return Ok(());
         };
@@ -948,6 +949,7 @@ impl SpiceDataDistributorActor {
             return Ok(());
         };
 
+        debug!(?data_id, ?requester, "sending requested data");
         for (part_ord, (part, merkle_proof)) in
             boxed_parts.into_iter().zip(merkle_proofs).enumerate()
         {
