@@ -461,6 +461,13 @@ impl ChunkExecutorActor {
             .send(SpiceDistributorOutgoingReceipts { block_hash, receipt_proofs });
     }
 
+    #[instrument(
+        target = "chunk_executor",
+        level = "debug",
+        "process_apply_chunk_results",
+        skip(self, results),
+        err
+    )]
     fn process_apply_chunk_results(
         &mut self,
         block_hash: CryptoHash,
