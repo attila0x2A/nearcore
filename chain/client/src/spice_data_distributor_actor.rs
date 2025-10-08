@@ -845,6 +845,14 @@ impl SpiceDataDistributorActor {
     // FIXME: Custom error type?
     // FIXME: Test waiting_on_data addition/removal
     fn start_waiting_on_data(&mut self, block_hash: &CryptoHash) -> Result<(), Error> {
+        let Some(signer) = self.validator_signer.get() else {
+            // FIXME: Is ok for rpc nodes, etc.
+            return Ok(());
+            // debug_assert!(false);
+            // return Err(Error::Other("trying to distribute data without validator_signer"));
+        };
+        let me = signer.validator_id();
+
         let block = self.chain_store.get_block(block_hash)?;
         let shard_layout = self.epoch_manager.get_shard_layout(&block.header().epoch_id())?;
         // TODO(spice): Improve how we figure out which data we need. It's inefficient at the
@@ -863,11 +871,6 @@ impl SpiceDataDistributorActor {
                 });
             }
         }
-        let Some(signer) = self.validator_signer.get() else {
-            debug_assert!(false);
-            return Err(Error::Other("trying to distribute data without validator_signer"));
-        };
-        let me = signer.validator_id();
         for data_id in data_ids {
             if self.verify_data_is_unknown(me, &block, &data_id).is_err() {
                 continue;
