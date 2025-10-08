@@ -397,8 +397,10 @@ impl ShardTries {
         fields(
             height = block_height,
             shard_id = %shard_uid.shard_id(),
-            tag_block_production = true
-        )
+            tag_block_production = true,
+            trie_changes,
+        ),
+        ret,
     )]
     pub fn apply_memtrie_changes(
         &self,
