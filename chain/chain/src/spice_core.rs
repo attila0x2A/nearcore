@@ -289,6 +289,7 @@ impl CoreStatementsTracker {
             let chunk_id = endorsement.chunk_id();
             assert_eq!(&chunk_id.block_hash, block.header().hash());
 
+            tracing::debug!(target: "spice_core", ?chunk_id, ?endorsement, "saving endorsement");
             store_update.merge(self.save_endorsement(
                 &chunk_id.block_hash,
                 chunk_id.shard_id,
@@ -333,10 +334,12 @@ impl CoreStatementsTracker {
             let endorsement_state =
                 chunk_validator_assignments.compute_endorsement_state(signatures);
 
-            if !endorsement_state.is_endorsed {
-                continue;
-            }
+            // FIXME:
+            // if !endorsement_state.is_endorsed {
+            //     continue;
+            // }
 
+            tracing::debug!(target: "spice_core", ?chunk_id, "saving execution result");
             assert_eq!(&chunk_id.block_hash, block.header().hash());
             store_update.merge(self.save_execution_result(
                 &chunk_id.block_hash,
@@ -489,8 +492,6 @@ impl CoreStatementsProcessor {
         endorsement: SpiceChunkEndorsement,
     ) -> Result<(), ProcessChunkError> {
         assert!(cfg!(feature = "protocol_feature_spice"));
-
-        tracing::debug!(target: "spice_core", ?endorsement, "processing endorsement");
 
         let tracker = self.read();
 
@@ -840,9 +841,9 @@ impl CoreStatementsProcessor {
             for (execution_result_hash, validator_signatures) in on_chain_endorsements {
                 let endorsement_state =
                     chunk_validator_assignments.compute_endorsement_state(validator_signatures);
-                if !endorsement_state.is_endorsed {
-                    continue;
-                }
+                // if !endorsement_state.is_endorsed {
+                //     continue;
+                // }
 
                 let Some((execution_result, index)) = block_execution_results.remove(chunk_id)
                 else {
