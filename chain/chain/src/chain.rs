@@ -2101,6 +2101,10 @@ impl Chain {
 
     /// Update flat storage and memtrie for given `shard_id` and newly
     /// processed `block`.
+    // FIXME: Do after execution is done for block and don't do in block post-processing when spice
+    // is on.
+    // FIXME: Create a TODO for myself to create a spice test when execution is behind by a few
+    // blocks from head. (Right now it works basically due to a race.)
     fn update_flat_storage_and_memtrie(
         &self,
         block: &Block,
@@ -2109,12 +2113,19 @@ impl Chain {
         let epoch_id = block.header().epoch_id();
         let shard_uid = shard_id_to_uid(self.epoch_manager.as_ref(), shard_id, epoch_id)?;
 
+        // // FIXME: IIUC flat storage is some sort of optimization making easier to access blocks;
+        // If true, then we should move head only after execution is done.
+
         // Update flat storage.
         let flat_storage_manager = self.runtime_adapter.get_flat_storage_manager();
         if flat_storage_manager.get_flat_storage_for_shard(shard_uid).is_some() {
             if let Some(new_flat_head) = self.get_new_flat_storage_head(block, shard_uid)? {
                 flat_storage_manager.update_flat_storage_for_shard(shard_uid, new_flat_head)?;
             }
+        }
+
+        if cfg!(feature = "protocol_feature_spice") {
+            return Ok(());
         }
 
         // Garbage collect memtrie roots.
