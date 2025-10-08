@@ -200,11 +200,17 @@ impl ViewClientActorInner {
         &self,
         finality: &Finality,
     ) -> Result<CryptoHash, near_chain::Error> {
-        match finality {
-            Finality::None => Ok(self.chain.head()?.last_block_hash),
-            Finality::DoomSlug => Ok(*self.chain.head_header()?.last_ds_final_block()),
-            Finality::Final => Ok(self.chain.final_head()?.last_block_hash),
+        // FIXME: Get last non-spice block instead to allow queries to run.
+        let block_hash = match finality {
+            Finality::None => self.chain.head()?.last_block_hash,
+            Finality::DoomSlug => *self.chain.head_header()?.last_ds_final_block(),
+            Finality::Final => self.chain.final_head()?.last_block_hash,
+        };
+        let mut block = self.chain.get_block(&block_hash).unwrap();
+        while block.is_spice_block() {
+            block = self.chain.get_block(block.header().prev_hash()).unwrap();
         }
+        Ok(*block.hash())
     }
 
     /// Returns block header by reference.
