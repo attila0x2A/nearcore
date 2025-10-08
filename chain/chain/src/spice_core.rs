@@ -491,7 +491,7 @@ impl CoreStatementsProcessor {
         &self,
         endorsement: SpiceChunkEndorsement,
     ) -> Result<(), ProcessChunkError> {
-        // assert!(cfg!(feature = "protocol_feature_spice"));
+        assert!(cfg!(feature = "protocol_feature_spice"));
 
         let tracker = self.read();
 
@@ -542,7 +542,7 @@ impl CoreStatementsProcessor {
         &self,
         block: &Block,
     ) -> Result<HashMap<ShardId, Arc<ChunkExecutionResult>>, Error> {
-        // assert!(cfg!(feature = "protocol_feature_spice"));
+        assert!(cfg!(feature = "protocol_feature_spice"));
 
         let mut results = HashMap::new();
 
@@ -563,7 +563,7 @@ impl CoreStatementsProcessor {
         &self,
         block: &Block,
     ) -> Result<Option<BlockExecutionResults>, Error> {
-        // assert!(cfg!(feature = "protocol_feature_spice"));
+        assert!(cfg!(feature = "protocol_feature_spice"));
 
         let mut results = HashMap::new();
 
@@ -579,7 +579,7 @@ impl CoreStatementsProcessor {
     }
 
     pub fn all_execution_results_exist(&self, block: &Block) -> Result<bool, Error> {
-        // assert!(cfg!(feature = "protocol_feature_spice"));
+        assert!(cfg!(feature = "protocol_feature_spice"));
 
         let tracker = self.read();
         tracker.all_execution_results_exist(block)

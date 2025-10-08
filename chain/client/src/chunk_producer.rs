@@ -403,7 +403,7 @@ impl ChunkProducer {
         let mut pool_guard = self.sharded_tx_pool.lock();
         let prepared_transactions = if let Some(mut iter) = pool_guard.get_pool_iterator(shard_uid)
         {
-            if true || cfg!(feature = "protocol_feature_spice") {
+            if cfg!(feature = "protocol_feature_spice") {
                 // TODO(spice): properly implement transaction preparation to respect limits
                 let mut res = vec![];
                 while let Some(iter) = iter.next() {

@@ -123,7 +123,7 @@ impl EpochInfoAggregator {
                 })
                 .or_insert_with(|| ChunkStats::new_with_production(u64::from(*mask), 1));
 
-            if true || cfg!(feature = "protocol_feature_spice") {
+            if cfg!(feature = "protocol_feature_spice") {
                 continue;
             }
 

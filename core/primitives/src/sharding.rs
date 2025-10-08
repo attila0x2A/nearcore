@@ -614,7 +614,7 @@ impl ShardChunkHeader {
                 ShardChunkHeaderInner::V2(_) => false,
                 ShardChunkHeaderInner::V3(_) => false,
                 ShardChunkHeaderInner::V4(_) => true,
-                ShardChunkHeaderInner::V5(_) => true || cfg!(feature = "protocol_feature_spice"),
+                ShardChunkHeaderInner::V5(_) => cfg!(feature = "protocol_feature_spice"),
             },
         };
 

@@ -220,7 +220,7 @@ impl RpcHandler {
 
         if self.shard_tracker.cares_about_shard_this_or_next_epoch(&head.last_block_hash, shard_id)
         {
-            if false && !cfg!(feature = "protocol_feature_spice") {
+            if !cfg!(feature = "protocol_feature_spice") {
                 let state_root =
                     match self.chain_store.get_chunk_extra(&head.last_block_hash, &shard_uid) {
                         Ok(chunk_extra) => *chunk_extra.state_root(),

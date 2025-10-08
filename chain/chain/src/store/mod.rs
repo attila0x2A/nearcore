@@ -1825,7 +1825,7 @@ impl<'a> ChainStoreUpdate<'a> {
                     &map,
                 )?;
                 store_update.insert_ser(DBCol::Block, block.hash().as_ref(), block)?;
-                if true || cfg!(feature = "protocol_feature_spice") {
+                if cfg!(feature = "protocol_feature_spice") {
                     let prev_hash = block.header().prev_hash();
                     let mut prev_next_hashes =
                         self.chain_store.get_all_next_block_hashes(prev_hash)?;
