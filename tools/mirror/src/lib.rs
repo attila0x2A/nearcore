@@ -2016,6 +2016,7 @@ impl<T: ChainAccess> TxMirror<T> {
             target_indexer_done_tx.send(res).unwrap();
         });
 
+        tracing::debug!(target: "mirror", "wait til we set the values in target_height and target_head after receiving a message from the indexer");
         // wait til we set the values in target_height and target_head after receiving a message from the indexer
         let (_target_client, target_view_client, rpc_handler) = clients_rx.await.unwrap();
 
@@ -2076,6 +2077,7 @@ impl<T: ChainAccess> TxMirror<T> {
                 )?;
             }
         }
+        tracing::debug!(target: "mirror", "queing txs");
         self.queue_txs(
             &tracker,
             &tx_block_queue,
