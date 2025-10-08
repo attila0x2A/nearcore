@@ -22,7 +22,7 @@ use near_primitives::hash::CryptoHash;
 use near_primitives::network::{AnnounceAccount, PeerId};
 use near_primitives::optimistic_block::OptimisticBlock;
 use near_primitives::sharding::PartialEncodedChunkWithArcReceipts;
-use near_primitives::spice_partial_data::SpicePartialData;
+use near_primitives::spice_partial_data::{SpiceDataIdentifier, SpicePartialData};
 use near_primitives::state_sync::{PartIdOrHeader, StateRequestAckBody};
 use near_primitives::stateless_validation::chunk_endorsement::ChunkEndorsement;
 use near_primitives::stateless_validation::contract_distribution::{
@@ -321,6 +321,12 @@ pub enum NetworkRequests {
     SpicePartialData { partial_data: SpicePartialData, recipients: HashSet<AccountId> },
     /// Message for a spice chunk endorsement, sent by a chunk validator to all validators.
     SpiceChunkEndorsement(AccountId, SpiceChunkEndorsement),
+    // FIXME: Add message
+    SpacePartialDataRequest {
+        data_id: SpiceDataIdentifier,
+        producer: AccountId,
+        requester: AccountId,
+    },
 }
 
 #[derive(Debug, Message, strum::IntoStaticStr)]

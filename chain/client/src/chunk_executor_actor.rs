@@ -179,6 +179,12 @@ pub struct ExecutorApplyChunksDone {
 impl Handler<ExecutorIncomingUnverifiedReceipts> for ChunkExecutorActor {
     fn handle(&mut self, receipts: ExecutorIncomingUnverifiedReceipts) {
         let block_hash = receipts.block_hash;
+        tracing::debug!(
+            target: "chunk_executor",
+            %block_hash,
+            receipt_proofs=?receipts.receipt_proof,
+            "received receipts",
+        );
         self.pending_unverified_receipts.entry(block_hash).or_default().push(receipts);
 
         if let Err(err) = self.try_process_next_blocks(&block_hash) {

@@ -25,7 +25,7 @@ use crate::routing::route_back_cache::RouteBackCache;
 use crate::shards_manager::ShardsManagerRequestFromNetwork;
 use crate::snapshot_hosts::{SnapshotHostInfoError, SnapshotHostsCache};
 use crate::spice_data_distribution::{
-    SpiceDataDistributorSenderForNetwork, SpiceIncomingPartialData,
+    SpiceDataDistributorSenderForNetwork, SpiceIncomingPartialData, SpicePartialDataRequest,
 };
 use crate::state_witness::{
     ChunkContractAccessesMessage, ChunkStateWitnessAckMessage, ContractCodeRequestMessage,
@@ -794,6 +794,11 @@ impl NetworkState {
                             .await
                             .ok();
                     }
+                    None
+                }
+                T1MessageBody::SpicePartialDataRequest(data_id, requester) => {
+                    self.spice_data_distributor_adapter
+                        .send(SpicePartialDataRequest { data_id, requester });
                     None
                 }
             },
